@@ -21,8 +21,11 @@ need_libvirt = virsh -c qemu:///system list >/dev/null 2>&1 || { echo "libvirt n
 # ispis zaglavlja skripte (shema laba i upotreba), bez izvršavanja
 shema = sed -n '2,/^set -/p' $(1) | grep '^\#' | sed 's/^\# \{0,1\}//'
 SUDO = sudo PAUZA=$(PAUZA)
+# ispis OPIS.md primjera: naslovi u boji, blokovi koda uvučeni (bez vanjskih alata)
+desc = awk '/^```/ {k=!k; next} k {print "    " $$0; next} {gsub(/\*\*/, "")} /^\# / {printf "\033[1;36m%s\033[0m\n", substr($$0,3); next} /^\#\# / {printf "\033[1m%s\033[0m\n", substr($$0,4); next} {print}' $(1)/OPIS.md
 
 .PHONY: help setup check run all lab-all clean-all ssh-key \
+  v1-p1-desc v1-p2-desc v1-p3-desc v1-p4-desc v1-p5-desc v2-p1-desc v2-p2-desc v2-p3-desc v2-p4-desc v2-p5-desc v2-p6-desc v3-p1-desc v3-p2-desc v3-p3-desc v3-p4-desc v3-p5-desc \
   v1-p1 v1-p1-lab v1-p1-netplan v1-p1-clean v1-p2 v1-p3 v1-p3-lab v1-p3-clean \
   v1-p4 v1-p4-lab v1-p4-clean v1-p5 v1-p5-lab v1-p5-clean v1-clean \
   v2-p1 v2-p1-lab v2-p1-kvar v2-p1-dijagnoza v2-p1-rjesenje v2-p1-clean v2-p2 \
@@ -35,6 +38,7 @@ SUDO = sudo PAUZA=$(PAUZA)
 help: ## ovaj popis
 > @awk 'BEGIN{FS=":.*## "} /^##@/{printf "\n\033[1m%s\033[0m\n", substr($$0,5)} /^[a-zA-Z0-9_-]+:.*## /{printf "  \033[36m%-18s\033[0m %s\n",$$1,$$2}' $(MAKEFILE_LIST)
 > @printf '\nPrimjer: make v1-p1   ili   make run EX=v1-p1.   PAUZA=1 (npr. make v1-p1-lab PAUZA=1) čeka Enter nakon svakog koraka.\n'
+> @printf 'Detaljan opis primjera (postavka, problem, pristup, odluke): make v1-p1-desc  (isti tekst je u v1/p1/OPIS.md).\n'
 
 setup: ## instalira sve alate (00-setup.sh)
 > ./00-setup.sh
@@ -53,6 +57,8 @@ ssh-key:
 ##@ Vježba 1 (V6): konfigurisanje mreže i mrežno okruženje (lab u Linux network namespace-ovima; -lab traži sudo)
 v1-p1: ## mrežne postavke računara: adrese, gateway, DNS, ARP (ipconfig /all), samo čita
 > bash v1/p1/konfiguracija.sh pregled
+v1-p1-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v1/p1)
 v1-p1-lab: ## [lab] statička adresa, gateway, DNS, pa DHCP (DISCOVER/OFFER/REQUEST/ACK, zakup, APIPA)
 > @$(call need,dnsmasq)
 > @$(call need,dhcpcd)
@@ -67,9 +73,13 @@ v1-p2: ## logičko segmentiranje 192.168.0.0/24 (100 + 50 računara) i IP plan; 
 > python3 v1/p2/ip_plan.py $(MREZA) $(SEG)
 > @$(call banner,VLSM: svaka podmreža onolika koliko treba)
 > python3 v1/p2/ip_plan.py $(MREZA) $(SEG) --vlsm
+v1-p2-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v1/p2)
 
 v1-p3: ## kaskadna hijerarhijska LAN (3 nivoa svičeva): ispis naredbi (DRY=1), ništa se ne mijenja
 > DRY=1 bash v1/p3/kaskada.sh up
+v1-p3-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v1/p3)
 v1-p3-lab: ## [lab] gradi kaskadu, MAC tabele, promet kroz nivoe, kvar uplinka
 > $(SUDO) bash v1/p3/kaskada.sh vjezba
 v1-p3-clean: ## briše lab v1-p3
@@ -77,6 +87,8 @@ v1-p3-clean: ## briše lab v1-p3
 
 v1-p4: ## VLAN-ovi: shema laba (ništa se ne mijenja)
 > @$(call shema,v1/p4/vlan.sh)
+v1-p4-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v1/p4)
 v1-p4-lab: ## [lab] svič s VLAN 10/20, access i trunk portovi, router on a stick, NAT, izolacija gostiju
 > @$(call need,nft)
 > $(SUDO) bash v1/p4/vlan.sh vjezba
@@ -85,6 +97,8 @@ v1-p4-clean: ## briše lab v1-p4
 
 v1-p5: ## bekap internet link (dual WAN): shema laba (ništa se ne mijenja)
 > @$(call shema,v1/p5/bekap.sh)
+v1-p5-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v1/p5)
 v1-p5-lab: ## [lab] dva ISP-a, metrike ruta, kvar linka, nadzor i automatski failover
 > @$(call need,traceroute)
 > $(SUDO) bash v1/p5/bekap.sh vjezba
@@ -96,6 +110,8 @@ v1-clean: v1-p1-clean v1-p3-clean v1-p4-clean v1-p5-clean ## čisti cijelu vjež
 ##@ Vježba 2 (V7): održavanje mreže i računara (diskovi su datoteke na loop uređajima; -lab traži sudo)
 v2-p1: ## dijagnostika LAN mreže: Windows naredbe i Linux ekvivalenti, shema laba
 > @$(call shema,v2/p1/dijagnostika.sh)
+v2-p1-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v2/p1)
 v2-p1-lab: ## [lab] ping, ip addr, traceroute, ss (LISTEN/ESTAB/TIME-WAIT) na ispravnoj mreži
 > @$(call need,dnsmasq)
 > $(SUDO) bash v2/p1/dijagnostika.sh vjezba
@@ -110,10 +126,14 @@ v2-p1-clean: ## briše lab v2-p1
 
 v2-p2: ## pouzdanost složenih sistema: RAID 1 (2 x 0.97) i računar (komponente 0.95), serijski/paralelno
 > python3 v2/p2/pouzdanost.py
+v2-p2-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v2/p2)
 
 v2-p3: ## štampači: CUPS, redovi čekanja (lpstat), samo čita
 > @$(call need,lpstat)
 > bash v2/p3/stampac.sh pregled
+v2-p3-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v2/p3)
 v2-p3-lab: ## [lab] mrežni štampač (emulator, port 9100), štampa, zastoji, zaglavljen red
 > @$(call need,lpadmin)
 > $(SUDO) bash v2/p3/stampac.sh vjezba
@@ -122,6 +142,8 @@ v2-p3-clean: ## uklanja štampač vježbe i gasi emulator
 
 v2-p4: ## RAID: postojeći nizovi i diskovi, samo čita
 > bash v2/p4/raid1.sh pregled
+v2-p4-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v2/p4)
 v2-p4-lab: ## [lab] softverski RAID 1 (mdadm, ili btrfs ako nema md): kvar diska, degradirani rad, zamjena, obnova
 > $(SUDO) bash v2/p4/raid1.sh vjezba
 v2-p4-clean: ## briše diskove vježbe v2-p4
@@ -129,6 +151,8 @@ v2-p4-clean: ## briše diskove vježbe v2-p4
 
 v2-p5: ## particije i boot: diskovi, MBR/GPT, UEFI/BIOS, fstab, samo čita
 > bash v2/p5/particije.sh pregled
+v2-p5-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v2/p5)
 v2-p5-lab: ## [lab] MBR (primarne, proširena, logičke), GPT (EFI, sistem, podaci, recovery), UUID i fstab
 > @$(call need,sfdisk)
 > $(SUDO) bash v2/p5/particije.sh vjezba
@@ -137,6 +161,8 @@ v2-p5-clean: ## briše disk vježbe v2-p5
 
 v2-p6: ## virtuelna mašina (KVM/libvirt, kao Hyper-V): preduslovi i plan, ništa se ne pravi
 > bash v2/p6/vm.sh plan
+v2-p6-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v2/p6)
 v2-p6-up: ssh-key ## [opcionalno] preuzme Ubuntu sliku (~600 MB), napravi i pokrene VM (traži KVM)
 > @$(call need_libvirt)
 > sudo bash v2/p6/vm.sh up
@@ -151,6 +177,8 @@ v2-clean: v2-p1-clean v2-p3-clean v2-p4-clean v2-p5-clean v2-p6-clean ## čisti 
 v3-p1: ## ažuriranje: verzija, dostupna ažuriranja, automatsko ažuriranje, historija + provjera konfiguracije
 > bash v3/p1/azuriranje.sh pregled
 > bash v3/p1/azuriranje.sh provjera
+v3-p1-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v3/p1)
 v3-p1-apply: ## [opcionalno] apt update, simulacija, uključuje unattended-upgrades i probni prolaz
 > sudo bash v3/p1/azuriranje.sh apply
 v3-p1-clean: ## uklanja postavke koje je dodao v3-p1-apply
@@ -159,6 +187,8 @@ v3-p1-clean: ## uklanja postavke koje je dodao v3-p1-apply
 v3-p2: ## antivirus (ClamAV): vlastiti potpisi, skeniranje, EICAR, karantena (bez interneta, bez sudo)
 > @$(call need,clamscan)
 > PAUZA=$(PAUZA) bash v3/p2/antimalware.sh vjezba
+v3-p2-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v3/p2)
 v3-p2-apply: ## [opcionalno] preuzima službenu bazu potpisa (freshclam, ~200 MB) i skenira njome
 > sudo bash v3/p2/antimalware.sh apply
 v3-p2-clean: ## briše datoteke vježbe v3-p2
@@ -166,6 +196,8 @@ v3-p2-clean: ## briše datoteke vježbe v3-p2
 
 v3-p3: ## disk: zauzeće, najveći direktoriji, šta se može čistiti, samo čita
 > bash v3/p3/disk.sh pregled
+v3-p3-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v3/p3)
 v3-p3-lab: ## [lab] automatsko čišćenje (tmpfiles), fragmentacija i defragmentacija (e4defrag), TRIM
 > @$(call need,e4defrag)
 > $(SUDO) bash v3/p3/disk.sh vjezba
@@ -174,6 +206,8 @@ v3-p3-clean: ## briše datoteke vježbe v3-p3
 
 v3-p4: ## tačka vraćanja: provjera systemd timera (dnevno) i skripte, ništa se ne instalira
 > bash v3/p4/restore.sh provjera
+v3-p4-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v3/p4)
 v3-p4-lab: ## [lab] btrfs snapshot kao Restore Point: loša instalacija, vraćanje sistema (podaci ostaju), retencija
 > @$(call need,mkfs.btrfs)
 > $(SUDO) bash v3/p4/restore.sh vjezba
@@ -182,6 +216,8 @@ v3-p4-clean: ## briše disk vježbe v3-p4
 
 v3-p5: ## nadzor (Task Manager): opterećenje, memorija, procesi, disk, servisi pri startu, samo čita
 > bash v3/p5/nadzor.sh pregled
+v3-p5-desc: ## opis: postavka, problem, pristup rješavanju, arhitektonske/dizajnerske/implementacijske odluke
+> @$(call desc,v3/p5)
 v3-p5-lab: ## [lab] zaglavljen proces: pronalaženje, prioritet, gašenje; servis pri startu (enable/disable)
 > $(SUDO) bash v3/p5/nadzor.sh vjezba
 v3-p5-clean: ## uklanja demo servis i procese vježbe v3-p5

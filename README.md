@@ -130,6 +130,16 @@ Opcije: `SKIP_LIBVIRT=1` (bez KVM-a), `SKIP_CLAMAV=1` (bez ClamAV-a).
 Svaki primjer ima oznaku `v<vježba>-p<primjer>`. Naredba `make v1-p1` pokreće primjer 1 iz vježbe 1 i ispisuje svaku
 naredbu koja se izvršava. Isto radi i `make run EX=v1-p1`.
 
+### Opis primjera: `-desc`
+
+Svaki primjer ima cilj `-desc` koji ispisuje detaljan opis: **postavku** (topologija, diskovi, servisi), **problem** koji
+se rješava, **pristup rješavanju** korak po korak te **arhitektonske, dizajnerske i implementacijske odluke** (zašto je
+lab napravljen baš tako). Isti tekst je u datoteci `OPIS.md` u direktoriju primjera.
+
+```bash
+make v1-p4-desc      # ili: less v1/p4/OPIS.md
+```
+
 ### Pravilo: osnovni cilj samo čita, `-lab` gradi lab
 
 **Osnovni cilj svakog primjera ne mijenja sistem**: pregled stanja računara, shema laba, ispis naredbi ili provjera
@@ -156,6 +166,7 @@ konfiguracije. Ciljevi koji nešto prave imaju sufiks `-lab` (izolirani lab: nam
 | `make v3-p3` / `v3-p3-lab` | disk: zauzeće i čišćenje / tmpfiles (Storage Sense), fragmentacija, e4defrag, fstrim | ne / lab |
 | `make v3-p4` / `v3-p4-lab` | tačka vraćanja: provjera timera / snapshot, loša instalacija, vraćanje (podaci ostaju), retencija | ne / lab |
 | `make v3-p5` / `v3-p5-lab` | nadzor: load, memorija, procesi, disk, servisi pri startu / zaglavljen proces, renice, kill, enable/disable servisa | ne / lab |
+| `make vN-pM-desc` | opis primjera: postavka, problem, pristup, arhitektonske/dizajnerske/implementacijske odluke | ne |
 | `make all` | svi osnovni ciljevi redom | ne |
 | `make lab-all` | svi `-lab` ciljevi redom, svaki se odmah čisti | lab |
 | `make clean-all` | čisti sve primjere | uklanja |
@@ -193,6 +204,7 @@ make v2-p3-lab     # štampači ... i dalje redom do v3-p5-lab
 Makefile        # make help
 00-setup.sh     # instalacija alata
 lib/            # zajedničke funkcije skripti (ispis naredbi, ping, namespace-ovi)
+vN/pM/OPIS.md   # opis svakog primjera (make vN-pM-desc)
 v1/p1..p5/      # vježba 1 (V6): mrežne postavke i DHCP, segmentiranje, kaskadna LAN, VLAN, bekap link
 v1/projekat/    # projektni zadatak: idejni projekat LAN mreže
 v2/p1..p6/      # vježba 2 (V7): dijagnostika, pouzdanost, štampači, RAID 1, particije, VM
