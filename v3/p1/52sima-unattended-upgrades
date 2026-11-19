@@ -1,0 +1,7 @@
+// v3/p1: postavke za unattended-upgrades (kopira se u /etc/apt/apt.conf.d/52sima-unattended-upgrades)
+// Koje izvore ažurira (podrazumijevano samo -security) određuje 50unattended-upgrades iz paketa.
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";   // stare jezgre zauzimaju /boot
+Unattended-Upgrade::Remove-Unused-Dependencies "true";      // isto što i apt autoremove
+Unattended-Upgrade::Automatic-Reboot "false";               // na serveru "true": restart kad ažuriranje to traži (nova jezgra) ...
+Unattended-Upgrade::Automatic-Reboot-Time "03:00";          // ... ali tek u 3 ujutro, van radnog vremena
+Unattended-Upgrade::SyslogEnable "true";

@@ -1,0 +1,12 @@
+# v3/p5: primjer servisa koji se pokreće s računarom (kao program u Windows Startup listi).
+# Svakih 10 s upiše red u dnevnik (journalctl -u sima-demo).
+[Unit]
+Description=SiMA demo: program koji se pokreće pri startu sistema
+After=network.target
+
+[Service]
+ExecStart=/bin/sh -c 'while true; do echo "sima-demo radi"; sleep 10; done'
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

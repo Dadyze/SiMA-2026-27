@@ -1,0 +1,7 @@
+# lokalno generisano
+ip-plan.md
+__pycache__/
+*.pyc
+# diskovi i slike (vježbe ih prave u /var/tmp, ali za svaki slučaj)
+*.img
+*.qcow2

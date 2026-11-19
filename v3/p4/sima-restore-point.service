@@ -1,0 +1,10 @@
+# v3/p4: pravi tačku vraćanja (pokreće ga sima-restore-point.timer).
+# Instalacija na pravom sistemu (putanje prilagoditi): kopirati obje datoteke u /etc/systemd/system/, pa
+#   sudo systemctl daemon-reload && sudo systemctl enable --now sima-restore-point.timer
+[Unit]
+Description=SiMA: tačka vraćanja sistema (btrfs snapshot)
+
+[Service]
+Type=oneshot
+Environment=ZADRZI=7
+ExecStart=/usr/local/sbin/napravi-rp.sh /mnt/sima-btrfs automatski

@@ -1,0 +1,12 @@
+# v3/p4: tačka vraćanja jednom dnevno (Windows: učestalost 1440 minuta u RegEdit + Task Scheduler).
+[Unit]
+Description=SiMA: dnevna tačka vraćanja sistema
+
+[Timer]
+OnCalendar=daily
+# ako je računar bio ugašen u zakazano vrijeme, tačka se pravi odmah nakon pokretanja
+Persistent=true
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target

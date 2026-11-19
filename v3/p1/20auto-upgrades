@@ -1,0 +1,6 @@
+// v3/p1: automatsko ažuriranje (kopira se u /etc/apt/apt.conf.d/20auto-upgrades)
+// Vrijednost je broj dana između dva izvršavanja; "0" isključuje.
+APT::Periodic::Update-Package-Lists "1";      // apt update svaki dan
+APT::Periodic::Unattended-Upgrade "1";        // unattended-upgrade svaki dan (sigurnosne zakrpe)
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";         // jednom sedmično briše zastarjele pakete iz keša

@@ -1,0 +1,7 @@
+# Dinamička adresa iz DHCP-a (klijentski računari): adresu, gateway i DNS dodjeljuje DHCP server (obično ruter).
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    eth0:
+      dhcp4: true
