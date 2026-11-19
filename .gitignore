@@ -5,3 +5,6 @@ __pycache__/
 # diskovi i slike (vježbe ih prave u /var/tmp, ali za svaki slučaj)
 *.img
 *.qcow2
+# generisanje bilješki
+docs/src/_build*.html
+docs/src/_profile/

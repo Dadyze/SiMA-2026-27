@@ -1,0 +1,250 @@
+<div class="dio">
+<div class="kicker">Vježba 1 · prezentacija V6</div>
+<h1>Konfigurisanje mreže i mrežno okruženje</h1>
+<p class="lead">Od jednog računara bez adrese do segmentirane mreže s VLAN-ovima i rezervnim internet linkom. Primjeri idu redom kojim se mreža gradi: sučelje i DHCP (<code>v1/p1</code>), plan adresa (<code>v1/p2</code>), fizička hijerarhija svičeva (<code>v1/p3</code>), logičko razdvajanje VLAN-ovima (<code>v1/p4</code>) i izlaz prema internetu s bekapom (<code>v1/p5</code>). Projektni zadatak iz prezentacije (idejni projekat LAN mreže) je u <code>v1/projekat</code>.</p>
+</div>
+
+<section>
+<div class="kicker">Vježba 1 · Primjer 1 · v1/p1</div>
+<h2>Konfigurisanje mrežnog sučelja: statička adresa, gateway, DNS i DHCP</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v1-p1            # mrežne postavke ovog računara (Linux "ipconfig /all"), samo čita
+make v1-p1-lab        # vježba u izoliranom labu (sudo); PAUZA=1 čeka Enter
+make v1-p1-netplan    # provjera trajne konfiguracije (netplan), bez primjene
+make v1-p1-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Računar je spojen kablom, ali "nema mreže". Da bi radio, potrebna su tri odvojena podešavanja: adresa s maskom (komunikacija u lokalnoj mreži), gateway (sve izvan lokalne mreže) i DNS (imena). Svaki nedostatak ima drugačiji simptom, a sva tri se mogu dobiti ručno (statički) ili automatski (DHCP).</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>pokazati svaki od tri dijela konfiguracije posebno i posljedicu kad nedostaje,</li>
+<li>pokazati DHCP razmjenu (DISCOVER, OFFER, REQUEST, ACK) i zakup s trajanjem (pitanje s vježbi: koliko dugo host zadržava adresu),</li>
+<li>pokazati mrežu bez DHCP servera (pitanje: može li LAN raditi bez DHCP-a),</li>
+<li>ne dirati mrežu računara na kojem student radi (WSL, SSH, internet moraju ostati ispravni),</li>
+<li>pokazati i trajnu konfiguraciju (netplan), jer naredbe <code>ip</code> važe samo do restarta.</li>
+</ul>
+<p><strong>Arhitektura.</strong> Dva network namespace-a spojena virtuelnim kablom: klijent <code>sima-pc</code> i ruter <code>sima-rtr</code>, koji je istovremeno gateway, DNS i DHCP server, kao većina kućnih i uredskih rutera. "Server na internetu" je adresa na loopbacku rutera, dovoljna da se razlikuje promet unutar i izvan podmreže.</p>
+<pre class="topo">[sima-pc] eth0 ---- veth ---- eth0 [sima-rtr]  192.168.1.1/24
+                                    dnsmasq: DHCP 192.168.1.100-199, zakup 24h; DNS server.lan, klix.ba
+                                    lo: 198.51.100.10 ("server na internetu")</pre>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<p>Lab se gradi s nekoliko naredbi <code>ip</code>; DHCP i DNS server je jedan proces <code>dnsmasq</code> pokrenut unutar namespace-a rutera.</p>
+<!--KOD v1/p1/konfiguracija.sh | mkdir -p "$LAB" /etc/netns/sima-pc | --dhcp-leasefile | Isječak 5 · izgradnja laba i DHCP/DNS server-->
+<p><code>--conf-file=/dev/null</code>, <code>--no-resolv</code> i <code>--no-hosts</code> isključuju svaku konfiguraciju računara, pa server zna samo ono što piše u naredbi. <code>--bind-interfaces</code> i <code>--interface=eth0</code> ga vežu za sučelje laba. <code>--address=/klix.ba/...</code> je lokalni DNS zapis, a <code>--dhcp-range</code> s <code>24h</code> određuje opseg i trajanje zakupa; opcije <code>router</code> i <code>dns-server</code> su ono što klijent uz adresu dobija od DHCP-a.</p>
+<!--KOD v1/p1/konfiguracija.sh | korak "2. Statička adresa | "(server izvan LAN-a)"; pauza | Isječak 6 · statička adresa-->
+<!--KOD v1/p1/konfiguracija.sh | korak "3. Gateway | info "Bez DNS-a | Isječak 7 · gateway i DNS-->
+<p>DNS klijenta se mijenja datotekom <code>/etc/netns/sima-pc/resolv.conf</code>: <code>ip netns exec</code> je automatski montira preko <code>/etc/resolv.conf</code>, ali samo za procese u tom namespace-u. Za provjeru se koristi <code>dig</code>, jer on čita <code>resolv.conf</code> direktno; <code>getent</code> bi na sistemima sa systemd-resolved pitao lokalni servis računara i zaobišao lab.</p>
+<!--KOD v1/p1/konfiguracija.sh | # DHCP klijent u namespace-u | =} | Isječak 8 · DHCP klijent bez tragova na računaru-->
+<p>DHCP klijent <code>dhcpcd</code> ima dva sporedna efekta koja bi promijenila računar: hook skripte (mijenjaju ime računara i DNS) i datoteke zakupa u <code>/var/lib/dhcpcd</code>. <code>-c /bin/true</code> zamjenjuje hook skripte praznom naredbom, a <code>unshare -m</code> pravi privatni mount namespace u kojem je <code>/var/lib/dhcpcd</code> privremeni <code>tmpfs</code>. Sama adresa i rute se i dalje postavljaju, jer to <code>dhcpcd</code> radi sam, bez skripti.</p>
+<!--KOD v1/p1/konfiguracija.sh | korak "5. DHCP | "(statička adresa radi i bez DHCP servera)" | Isječak 9 · DHCP, zakupi i mreža bez DHCP servera-->
+<div class="out"><div class="hd">izlaz make v1-p1-lab: koraci 5 i 7 (skraćeno)</div><pre>[pc]$ dhcpcd -4 -1 -B -q -t 15 eth0
+[pc]$ ip addr show eth0
+    inet 192.168.1.138/24 brd 192.168.1.255 scope global dynamic noprefixroute eth0
+       valid_lft 86400sec preferred_lft 75600sec
+$ grep -E DHCP(DISCOVER|OFFER|REQUEST|ACK) /run/sima-v1p1/dnsmasq.log
+dnsmasq-dhcp[3011]: DHCPDISCOVER(eth0) 96:4e:75:14:bd:ec
+dnsmasq-dhcp[3011]: DHCPOFFER(eth0) 192.168.1.138 96:4e:75:14:bd:ec
+dnsmasq-dhcp[3011]: DHCPREQUEST(eth0) 192.168.1.138 96:4e:75:14:bd:ec
+dnsmasq-dhcp[3011]: DHCPACK(eth0) 192.168.1.138 96:4e:75:14:bd:ec
+
+== 7. Mreža bez DHCP servera: klijent dobija samo link-local adresu 169.254.x.x (APIPA)
+[pc]$ ip -br addr show eth0
+eth0@if2         UP             169.254.14.104/16
+   OK   [pc] ping 192.168.1.1 (statička adresa radi i bez DHCP servera)</pre></div>
+<p>Trajna konfiguracija je YAML datoteka za netplan. Provjera je <code>netplan generate --root-dir</code> nad privremenim direktorijem: netplan generiše konfiguraciju za systemd-networkd kao na pravom sistemu, ali u privremeni direktorij, pa se ništa ne primjenjuje.</p>
+<!--KOD v1/p1/netplan-staticki.yaml | network: | search: [lan] | Isječak 10 · netplan: statička adresa-->
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Namespace umjesto VM-a ili prave mreže</strong> ostvaruje zahtjev "ne dirati računar": pravi mrežni stek se pravi za milisekunde i nestaje s <code>ip netns del</code>. Svaka naredba je ista kao na pravoj mašini, samo s prefiksom <code>ip netns exec</code>.</li>
+<li><strong>Jedan proces za DHCP i DNS (dnsmasq)</strong> odgovara arhitekturi kućnog rutera i drži lab malim. Paket <code>dnsmasq-base</code> nema sistemski servis, pa ne može zauzeti port 53 računara.</li>
+<li><strong>Redoslijed koraka prati redoslijed kvarova u praksi</strong> (adresa, gateway, DNS) i svaki korak završava istim pingom s ishodom OK/NE: isti test, različit ishod, pa se vidi tačno šta je koje podešavanje donijelo.</li>
+<li><strong>Izolacija DHCP klijenta</strong> (<code>unshare</code>, <code>tmpfs</code>, bez hookova) je cijena toga što su klijent i računar isti kernel: bez toga bi vježba promijenila ime ili DNS računara. Jedna funkcija skriva tu složenost, a ispis i dalje prikazuje samo <code>dhcpcd ...</code>, onako kako bi se pokrenuo na pravom klijentu.</li>
+<li><strong>Netplan kao datoteka, provjeren bez primjene</strong>: konfiguracija se može pregledati i testirati prije nego što se primijeni na pravi server, gdje bi greška prekinula pristup.</li>
+</ul>
+</section>
+
+<section>
+<div class="kicker">Vježba 1 · Primjer 2 · v1/p2</div>
+<h2>Logičko segmentiranje IPv4 LAN mreže i IP plan</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v1-p2                                                    # zadatak s vježbi: jednake podmreže i VLSM
+make v1-p2 MREZA=10.10.0.0/23 SEG="uprava:120 proizvodnja:200 gosti:60"   # vlastiti zadatak
+python3 v1/p2/ip_plan.py 192.168.0.0/24 segment_1:100 segment_2:50 --vlsm --md ip-plan.md</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Zadatak s vježbi: mrežu 192.168.0.0/24 podijeliti na dva segmenta, do 100 i do 50 računara. Za svaki segment treba odrediti masku, adresu podmreže, opseg i broadcast tako da se podmreže ne preklapaju, a iz toga napraviti IP plan, obavezan dio projekta mreže (pitanje s vježbi: "šta je IP plan mreže").</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>rezultat isti kao rješenje na slajdu (dvije /25 podmreže), s istim međukoracima (broj bita, binarna maska),</li>
+<li>i optimalnija varijanta (VLSM), da se vidi cijena jednostavnosti,</li>
+<li>proizvoljna mreža i proizvoljan broj segmenata, za vlastite zadatke i projekat,</li>
+<li>IP plan kao tabela koja se može staviti u dokumentaciju projekta,</li>
+<li>bez root-a i bez mreže, da radi i za kućni rad.</li>
+</ul>
+<p><strong>Arhitektura.</strong> Jedan program bez stanja: ulaz (mreža i segmenti), proračun podmreža, ispis postupka i IP plan izveden iz istih podmreža. Adrese i VLAN brojevi iz plana se kasnije koriste u <code>v1/p4</code>.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v1/p2/ip_plan.py | def bita_za | return rezultat | Isječak 11 · proračun podmreža-->
+<p><code>bita_za</code> traži najmanji broj bita <code>h</code> za koji je <code>2^h - 2 &gt;= n</code> (mrežna i broadcast adresa se ne dodjeljuju); <code>max(2, ...)</code> postavlja donju granicu /30. Segmenti se obrađuju od najvećeg prema najmanjem, a početak svake podmreže se zaokružuje naviše na višekratnik veličine bloka (<code>-(-a // b) * b</code> je cjelobrojno dijeljenje zaokruženo naviše). Tako su sve podmreže poravnate i ne preklapaju se. Bez <code>--vlsm</code> se za sve segmente koristi broj bita najvećeg segmenta, kao u rješenju na slajdu. <code>subnet_of</code> provjerava da podmreža stane u zadanu mrežu.</p>
+<!--KOD v1/p2/ip_plan.py | def ip_plan(segmenti): | return "\n".join(redovi) | Isječak 12 · IP plan iz podmreža-->
+<div class="out"><div class="hd">izlaz make v1-p2: prvi segment i IP plan (skraćeno)</div><pre>== segment_1: potrebno 100 računara
+   bita za hostove: 7   (2^7 = 128, upotrebljivo 126 >= 100);  dužina maske: 32 - 7 = 25
+   maska: /25 = 255.255.255.128   (11111111.11111111.11111111.10000000)
+   adresa podmreže: 192.168.0.0   (11000000.10101000.00000000.00000000)
+   opseg hostova:   192.168.0.1 - 192.168.0.126   (126 adresa)
+   broadcast:       192.168.0.127
+
+| segment_1 (VLAN 10) | ruter (gateway) | 192.168.0.1 | /25 | 192.168.0.1 | statička |
+| segment_1 (VLAN 10) | klijenti (100) | 192.168.0.5 - 192.168.0.126 | /25 | 192.168.0.1 | DHCP |</pre></div>
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Python umjesto basha</strong> je jedini izuzetak u vježbi 1, i to namjerno: ovdje se računa, a ne upravlja sistemom. Modul <code>ipaddress</code> iz standardne biblioteke radi sa adresama kao s brojevima i garantuje ispravne granice podmreža, što bi u bashu bila ručna bitovna aritmetika sklona greškama.</li>
+<li><strong>Jednake podmreže kao podrazumijevani način</strong> ispunjavaju zahtjev "isto kao na slajdu"; VLSM je opcija, a Makefile ispisuje oba, pa student odmah vidi razliku (0 prema 64 slobodne adrese).</li>
+<li><strong>Ispis prati ručni postupak</strong> (bitovi, binarna maska, adresa podmreže binarno): program je i alat i "rješenje s postupkom" s kojim student poredi svoj rad.</li>
+<li><strong>IP plan iz istih podataka</strong>: plan i proračun ne mogu se razići, a raspored (gateway prvi, zatim server, štampač i svič statički, ostatak DHCP) slijedi uobičajenu praksu i preporuku s vježbi da mrežni štampač ima statičku adresu.</li>
+<li><strong>Greška umjesto pogrešnog rezultata</strong>: segmenti koji ne stanu prekidaju program s porukom, umjesto da se tiho napravi podmreža izvan zadane mreže.</li>
+</ul>
+</section>
+
+<section>
+<div class="kicker">Vježba 1 · Primjer 3 · v1/p3</div>
+<h2>Kaskadna (hijerarhijska) Ethernet LAN mreža</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v1-p3          # ispis svih naredbi izgradnje (DRY=1), ništa se ne mijenja
+make v1-p3-lab      # izgradnja, MAC tabele, promet kroz nivoe, kvar uplinka (sudo)
+make v1-p3-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Slajd prikazuje kaskadnu mrežu s napomenom da se ne preporučuje više od 3 nivoa. Treba pokazati zašto: kako svič uči gdje je koji uređaj, kuda prolazi promet iz dubine kaskade i šta znači kvar jednog uplinka.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>stvarna kaskada od tri nivoa (jezgro, pristup, kaskada) u jednoj podmreži,</li>
+<li>vidljive MAC tabele svičeva,</li>
+<li>mjerljiv dokaz da promet iz nižeg nivoa prolazi kroz sve više nivoe,</li>
+<li>kvar uplinka i njegov opseg (koji računari ostaju bez mreže).</li>
+</ul>
+<pre class="topo">nivo 1 (jezgro)          [core] ------------------ srv 192.168.1.10
+                         /      \
+nivo 2 (pristup)     [sw1]      [sw2] ----------- pc21 .121
+                     /   \          \
+                 pc11    pc12      [sw3]          nivo 3 (kaskada)
+                 .111    .112          \
+                                       pc31 .131</pre>
+<p><strong>Arhitektura.</strong> Svaki svič je Linux bridge u vlastitom namespace-u, svaki računar je namespace, a kablovi su veth parovi. Ruter nije dio laba: tema je sloj 2, jedan broadcast domen.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v1/p3/kaskada.sh | SVICEVI="sima-core | SVI="$SVICEVI | Isječak 13 · topologija kao podaci-->
+<p>Topologija nije napisana kao niz naredbi, nego kao podaci: lista svičeva, parovi uplinkova (<code>gornji:donji</code>) i računari u obliku <code>namespace:adresa:svič</code>. <code>SVI</code> se izvodi iz istih podataka i koristi za čišćenje.</p>
+<!--KOD v1/p3/kaskada.sh | gore() { | =} | Isječak 14 · izgradnja: tri petlje-->
+<p>Izgradnja su tri petlje: svičevi (namespace i bridge <code>br0</code>), uplinkovi (veth par čiji je gornji kraj nazvan po donjem sviču, a donji kraj uvijek <code>uplink</code>; oba kraja se dodaju u bridge naredbom <code>master br0</code>) i računari. Funkcija <code>run</code> ispisuje naredbu i izvršava je samo ako nije <code>DRY=1</code>, pa ista funkcija daje i osnovni cilj (ispis) i lab.</p>
+<!--KOD v1/p3/kaskada.sh | # mac_tabela svic | =} | Isječak 15 · MAC tabela po imenima računara-->
+<!--KOD v1/p3/kaskada.sh | korak "4. Saobraćaj kroz nivoe | ping1 sima-pc31 192.168.1.10 "(nakon popravke)" | Isječak 16 · promet kroz nivoe i kvar uplinka-->
+<div class="out"><div class="hd">izlaz make v1-p3-lab: koraci 3 do 5 (skraćeno)</div><pre>--- MAC tabela sviča core
+   pc11  16:ea:3c:41:82:72  ->  port sw1
+   pc21  82:cd:48:ac:e6:e6  ->  port sw2
+   pc31  8a:cc:66:06:0e:4b  ->  port sw2
+   paketi kroz uplink sw1: 0   sw2: 20   sw3: 20
+$ ip -n sima-sw2 link set uplink down
+   OK   [pc11] ping 192.168.1.10 (server)
+   NE   [pc21] ping 192.168.1.10 (server)
+   NE   [pc31] ping 192.168.1.10 (server)</pre></div>
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Linux bridge je stvarni svič</strong>: uči MAC adrese, prosljeđuje i poplavljuje okvire po istim pravilima kao neupravljivi svič, a <code>bridge fdb</code> daje pravu MAC tabelu. Ništa se ne simulira, pa su zaključci prenosivi na opremu.</li>
+<li><strong>Svič u vlastitom namespace-u</strong> daje lokalna imena portova (<code>uplink</code>, <code>pc21</code>) i omogućava kvar na jednom portu jednog sviča, tačno kao izvlačenje kabla.</li>
+<li><strong>Topologija kao podaci</strong>: nivo ili računar se dodaje jednim redom, a ista petlja gradi lab i ispis (<code>DRY=1</code>). To je ista ideja kao infrastruktura kao kod: opis se odvaja od izvršavanja.</li>
+<li><strong>Brojači iz JSON-a, razlika prije i poslije</strong> umjesto apsolutnih vrijednosti: pozadinski promet (ARP) ne kvari mjerenje, a parsiranje JSON-a (<code>ip -j</code>) je pouzdanije od parsiranja teksta.</li>
+<li><strong>Kvar na nivou 2</strong> je izabran jer najbolje pokazuje zaključak sa slajda: jedan uplink odsijeca i direktno spojen računar i cijeli niži nivo.</li>
+</ul>
+</section>
+
+<section>
+<div class="kicker">Vježba 1 · Primjer 4 · v1/p4</div>
+<h2>VLAN-ovi i pristup internetu iz VLAN podmreža preko zajedničkog rutera</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v1-p4          # shema laba, ništa se ne mijenja
+make v1-p4-lab      # VLAN-ovi, router on a stick, NAT, izolacija gostiju (sudo)
+make v1-p4-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Podjela adresa iz <code>v1/p2</code> je samo logička: na običnom sviču gost koji sebi postavi adresu uprave odmah je "unutra". Segmente treba stvarno razdvojiti (VLAN), omogućiti promet između njih i prema internetu preko jednog rutera, a gostima dati internet bez pristupa upravi (zahtjev iz projektnog zadatka: izolovan Wi-Fi za goste).</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>dokazati problem na sviču bez VLAN-ova,</li>
+<li>VLAN-ove napraviti istim koracima kao u web sučelju sviča sa slajdova (Create VLAN, Access port, Untagged),</li>
+<li>jedan ruter za oba segmenta (slajd: "pristup internetu iz VLAN podmreža preko zajedničkog rutera"),</li>
+<li>NAT prema internetu i pokazati zašto je potreban,</li>
+<li>gosti imaju internet, uprava može do gostiju, gosti ne mogu do uprave.</li>
+</ul>
+<pre class="topo">       VLAN 10 (uprava) 192.168.0.0/25          VLAN 20 (gosti) 192.168.0.128/25
+       pc1 .10    pc2 .11                       pc3 .130    pc4 .131
+         p1 |       | p2                          p3 |        | p4      access portovi (untagged)
+        [================== svič (bridge, VLAN filtering) ==================]
+                                | p5  trunk (tagged 10 i 20)
+                             [ruter]  eth0.10 192.168.0.1, eth0.20 192.168.0.129
+                                | wan 203.0.113.2/30 (NAT)
+                             [internet]  198.51.100.10</pre>
+<p><strong>Arhitektura.</strong> Upravljivi svič je bridge s uključenim VLAN filtriranjem (802.1Q u jezgri). Ruter je spojen jednim trunk portom i ima po jedno VLAN podsučelje za svaki segment (<em>router on a stick</em>). "Internet" je poseban namespace bez rute nazad prema privatnim adresama, isto kao pravi internet.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v1/p4/vlan.sh | izgradi() { | =} | Isječak 17 · svič, računari, ruter i internet-->
+<p>Bridge se pravi s <code>vlan_filtering 1</code>; ako jezgra to ne podržava, skripta to kaže i čisti se, umjesto da padne na pola. Portovi se pune iz liste <code>PC</code> (<code>namespace:vlan:adresa:gateway</code>), istih podataka koji se kasnije koriste za access portove i rute.</p>
+<!--KOD v1/p4/vlan.sh | korak "2. Kreiranje VLAN-ova | SW bridge vlan show; pauza | Isječak 18 · access i trunk portovi-->
+<p>Access port: <code>bridge vlan del ... vid 1</code> uklanja podrazumijevani VLAN, a <code>vid N pvid untagged</code> znači: okvir koji uđe bez oznake ide u VLAN N (PVID), a pri izlasku se oznaka skida. Trunk (<code>p5</code>) nosi oba VLAN-a bez <code>untagged</code>, dakle s 802.1Q oznakom.</p>
+<!--KOD v1/p4/vlan.sh | korak "5. Ruter: VLAN | kmd sima-pc1 traceroute | Isječak 19 · router on a stick-->
+<!--KOD v1/p4/vlan.sh | korak "6. Pristup internetu | kmd sima-ruter nft list ruleset | Isječak 20 · NAT i izolacija gostiju (nftables)-->
+<p><code>masquerade</code> u lancu <code>postrouting</code> zamjenjuje privatnu izvornu adresu adresom WAN sučelja. Firewall je stateful: prvo pravilo propušta odgovore na već uspostavljene veze (<code>ct state established,related</code>), drugo odbacuje nove veze iz VLAN-a 20 prema VLAN-u 10.</p>
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Bridge s VLAN filtriranjem</strong> se preslikava jedan na jedan na pojmove sa slajdova (VLAN ID, access, untagged, PVID, trunk), pa student uči pojmove sviča, a ne nečiju simulaciju.</li>
+<li><strong>Isti "napad" prije i poslije VLAN-ova</strong> (gost s adresom uprave): ista naredba, različit ishod, što je najjasniji dokaz da VLAN razdvaja na sloju 2.</li>
+<li><strong>Router on a stick</strong> ostvaruje zahtjev "jedan zajednički ruter" s jednim kablom, kao u maloj instalaciji (jedan ruter, jedan svič).</li>
+<li><strong>Politika na ruteru, ne na sviču</strong>: VLAN razdvaja, a ko smije kome je posao sloja 3. Stateful pravilo daje asimetriju iz zahtjeva (uprava do gostiju da, obrnuto ne) jednim redom; bez <code>established</code> pravila bi se prekinuli i odgovori.</li>
+<li><strong>NAT pravila naredbu po naredbu</strong> (a ne datoteka) da se na nastavi vidi efekat svakog; na kraju <code>nft list ruleset</code> pokazuje cjelinu.</li>
+</ul>
+<div class="note warn"><span class="lbl">Napomena</span>Lab traži jezgru s VLAN filtriranjem na bridge-u i modulom <code>8021q</code>. <code>00-setup.sh</code> provjerava podršku pri instalaciji. Ovaj lab nije pokretan u razvojnom okruženju (jezgra bez tih modula).</div>
+</section>
+
+<section>
+<div class="kicker">Vježba 1 · Primjer 5 · v1/p5</div>
+<h2>Bekap internet link za LAN mrežu (dual WAN, failover)</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v1-p5          # shema laba, ništa se ne mijenja
+make v1-p5-lab      # metrike, dvije vrste kvara, nadzor i automatski failover (sudo)
+make v1-p5-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Kad glavni internet link padne, LAN mora nastaviti raditi preko rezervnog (npr. 4G) i vratiti se na glavni kad on proradi, kao Dual WAN ruter sa slajda (DrayTek Vigor2920). Postoje dvije vrste kvara: <strong>A</strong>, link prema ISP-u fizički padne, pa ruter to vidi; <strong>B</strong>, link radi, ali ISP nema internet, pa ruter ništa ne primjećuje.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>dva nezavisna ISP-a s vlastitim putem do interneta,</li>
+<li>automatsko preključivanje i automatski povratak,</li>
+<li>pokazati razliku između kvara A i kvara B,</li>
+<li>bez "lupanja" (prebacivanja amo-tamo zbog jednog izgubljenog paketa).</li>
+</ul>
+<pre class="topo">[pc] 192.168.10.50 --- lan [ruter] wan1 100.64.1.2 --- [isp1 optika] ---\
+                                    wan2 100.64.2.2 --- [isp2 4G]   -----[internet] 198.51.100.10</pre>
+<p><strong>Arhitektura.</strong> Pet namespace-ova: računar, ruter s dva WAN sučelja i NAT-om na oba, dva ISP-a i internet koji ima povratne rute prema adresama oba ISP-a. Svaki ISP ima vlastiti uplink, pa se kvar B može napraviti kod ISP-a, kao u stvarnosti. Nadzor je posebna skripta koja radi na ruteru.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v1/p5/bekap.sh | izgradi() { | ip -n sima-inet addr add 198.51.100.10/32 dev lo | Isječak 21 · pet namespace-ova, NAT na oba WAN-a-->
+<p>NAT se učitava kao nftables datoteka (heredoc): <code>oifname { "wan1", "wan2" } masquerade</code> je jedno pravilo za oba izlaza, pa NAT ne treba mijenjati pri preključivanju. ISP-ovi i povratne rute interneta se prave u petlji po broju ISP-a (adrese se računaju iz broja).</p>
+<!--KOD v1/p5/bekap.sh | korak "1. Dvije zadane rute | sleep 1; echo "   put paketa nakon popravke | Isječak 22 · metrike i kvar A-->
+<p>Dvije zadane rute se razlikuju samo po metrici: manja ima prednost. Uz <code>ignore_routes_with_linkdown=1</code> jezgra preskače rutu čije sučelje nema link (oznaka <code>linkdown</code>), pa kvar A rješava sama, bez ikakvog nadzora.</p>
+<!--KOD v1/p5/failover.sh | # ruta za provjeru | =done | Isječak 23 · failover.sh: nadzor i preključivanje-->
+<p>Nadzor mora provjeravati glavni link i dok promet ide preko rezervnog. Zato ping ide s izvornom adresom <code>100.64.1.2</code>, a <code>ip rule</code> šalje pakete s tom adresom kroz posebnu tabelu 100, u kojoj postoji samo ruta preko <code>wan1</code> (<em>policy routing</em>). Pri kvaru se dodaje zadana ruta preko rezervnog linka s metrikom 50 (ima prednost nad 100), a pri povratku se samo ona briše.</p>
+<div class="out"><div class="hd">izlaz make v1-p5-lab: zapisnik nadzora (failover.log)</div><pre>03:41:01 nadzor: ping 198.51.100.10 kroz wan1 svakih 1s, prag 3
+03:41:04 glavni link ne odgovara (3 puta): promet ide preko wan2 (rezervni)
+03:41:10 glavni link opet radi (3 puta): promet ide preko wan1 (glavni)
+   put paketa: 192.168.10.1 100.64.1.1 198.51.100.10</pre></div>
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Failover rutiranjem</strong>: ruter samo bira zadanu rutu; NAT, adrese i sučelja ostaju isti. Najmanja moguća promjena je i najmanje sklona greškama.</li>
+<li><strong>Dodavanje rute umjesto brisanja</strong>: originalna konfiguracija rutera se nikad ne dira, a povratak je brisanje jedne rute. Ako nadzor padne, ruter ostaje u poznatom stanju.</li>
+<li><strong>Histereza</strong> (3 neuspjeha za prelazak, 3 uspjeha za povratak) ostvaruje zahtjev "bez lupanja"; prag i interval su varijable (<code>PRAG</code>, <code>INTERVAL</code>, <code>CILJ</code>), ne konstante u kodu.</li>
+<li><strong>Policy routing za provjeru</strong> je ključna inženjerska odluka: bez njega bi nadzor nakon preključivanja pingao kroz rezervni link, javio da je "glavni" ispravan i odmah vratio promet na pokvareni link.</li>
+<li><strong>Kvar A i kvar B kao posebni koraci</strong>: glavna pouka je da metrika rješava samo kvar koji ruter vidi, a za kvar kod ISP-a je potreban aktivan nadzor.</li>
+<li><strong>Adresni opsezi</strong> 100.64.0.0/10 (adrese kakve ISP-ovi zaista daju) i dokumentacijski 203.0.113.0/24 i 198.51.100.0/24: lab se nikad ne sudara sa stvarnim mrežama.</li>
+</ul>
+</section>

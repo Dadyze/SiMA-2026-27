@@ -1,0 +1,216 @@
+<div class="dio">
+<div class="kicker">Vježba 3 · prezentacija V8</div>
+<h1>Održavanje klijentskog operativnog sistema</h1>
+<p class="lead">Održavanje OS-a u funkcionalnom stanju s projektovanim performansama, na Linuxu: ažuriranje (<code>v3/p1</code>), zaštita od malwarea (<code>v3/p2</code>), održavanje diska (<code>v3/p3</code>), tačke vraćanja (<code>v3/p4</code>) te nadgledanje performansi i programa pri pokretanju (<code>v3/p5</code>).</p>
+</div>
+
+<section>
+<div class="kicker">Vježba 3 · Primjer 1 · v3/p1</div>
+<h2>Ažuriranje operativnog sistema (ručno i automatizirano)</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v3-p1          # verzija, dostupna i sigurnosna ažuriranja, postavke, historija + provjera konfiguracije
+make v3-p1-apply    # apt update, simulacija, uključivanje automatskih ažuriranja, probni prolaz (sudo)
+make v3-p1-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Neažuriran sistem je najčešći put za malware i napade. Administrator treba znati koja su ažuriranja dostupna i koja su sigurnosna, kako ih primijeniti bez iznenađenja, kako ih automatizovati (Windows Update) i kako provjeriti da automatika zaista radi.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>pregled stanja bez ikakve promjene sistema,</li>
+<li>automatska sigurnosna ažuriranja zadana konfiguracijom koja se može pregledati i provjeriti prije primjene,</li>
+<li>probni prolaz koji pokazuje šta bi automatika uradila,</li>
+<li>studentov računar se ne smije sam restartovati zbog vježbe.</li>
+</ul>
+<p><strong>Arhitektura.</strong> <code>apt</code> za ručni rad; paket <code>unattended-upgrades</code> za automatiku, pokretan systemd timerima <code>apt-daily</code> i <code>apt-daily-upgrade</code>. Postavke su dvije datoteke u repozitoriju koje se kopiraju u <code>/etc/apt/apt.conf.d/</code>.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v3/p1/20auto-upgrades | APT::Periodic::Update-Package-Lists | AutocleanInterval | Isječak 49 · 20auto-upgrades: šta i koliko često-->
+<!--KOD v3/p1/52sima-unattended-upgrades | Unattended-Upgrade::Remove-Unused-Kernel | SyslogEnable | Isječak 50 · ponašanje automatskog ažuriranja-->
+<p>Vrijednost u <code>APT::Periodic</code> je broj dana između dva izvršavanja (<code>"0"</code> isključuje). Koji izvori se ažuriraju (podrazumijevano samo <code>-security</code>) određuje <code>50unattended-upgrades</code> iz paketa; naša datoteka dodaje samo ponašanje.</p>
+<!--KOD v3/p1/azuriranje.sh | local n s | s="$(apt-get | Isječak 51 · dostupna i sigurnosna ažuriranja iz simulacije-->
+<!--KOD v3/p1/azuriranje.sh | provjera() { | =} | Isječak 52 · provjera konfiguracije bez primjene-->
+<p><code>apt-config -c datoteka dump</code> čita datoteku istim parserom koji koristi <code>apt</code> i ispisuje rezultat; sintaksna greška se otkriva prije nego što datoteka dođe u <code>/etc</code>.</p>
+<!--KOD v3/p1/azuriranje.sh | korak "3. Uključivanje automatskih | kmd sh -c "unattended-upgrade --dry-run | Isječak 53 · uključivanje i probni prolaz-->
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Konfiguracija kao datoteke u repozitoriju</strong>: ista datoteka se provjerava, primjenjuje i čita na nastavi, i može se kopirati na bilo koji računar. To je razlika između "kliknuo sam negdje" i postavke koja se može pregledati.</li>
+<li><strong>Vlastita datoteka pored paketske</strong> (<code>52sima-...</code> uz <code>50unattended-upgrades</code>): nadogradnja paketa ne pravi sukob, a čišćenje uklanja samo našu datoteku.</li>
+<li><strong>Simulacija (<code>-s</code>, <code>--dry-run</code>)</strong> umjesto stvarnog ažuriranja: vježba pokazuje šta bi se desilo, a stvarno ažuriranje student pokreće svjesno.</li>
+<li><strong><code>Automatic-Reboot "false"</code></strong> uz komentar da je na serveru <code>true</code> u 3 ujutro: ispunjava zahtjev da se računar ne restartuje sam, a pokazuje kako se to radi na serveru.</li>
+<li><strong>Sigurnosna ažuriranja se broje posebno</strong>: prioritet održavanja nije "sve odmah", nego "sigurnosno odmah".</li>
+</ul>
+</section>
+
+<section>
+<div class="kicker">Vježba 3 · Primjer 2 · v3/p2</div>
+<h2>Zaštita od štetnog softvera (ClamAV)</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v3-p2          # vlastiti potpisi, skeniranje, EICAR, karantena (bez interneta, bez sudo)
+make v3-p2-apply    # službena baza potpisa (freshclam, ~200 MB) i skeniranje njome (sudo)
+make v3-p2-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Treba razumjeti kako antivirus prepoznaje štetni softver (potpisi), zašto se baza potpisa mora stalno ažurirati, šta se radi s pronađenom datotekom (karantena) i kako se zaštita automatizuje (Microsoft Defender), bez korištenja pravog malwarea.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>bez pravog malwarea i bez rizika za računar studenta i repozitorij,</li>
+<li>radi bez interneta i bez preuzimanja velike baze,</li>
+<li>vidljivo šta je potpis i zašto jedna vrsta potpisa nije dovoljna,</li>
+<li>bez root-a: skeniranje ne traži privilegije.</li>
+</ul>
+<p><strong>Arhitektura.</strong> ClamAV (<code>clamscan</code>, <code>sigtool</code>, <code>freshclam</code>) i direktorij vježbe po korisniku s dokumentima, EICAR test datotekom (standardna bezopasna datoteka koju svaki antivirus prijavljuje) i izmišljenim uzorkom <code>faktura.pdf.exe</code>. Osnovna vježba koristi vlastitu bazu potpisa; službena baza je opcionalan korak.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v3/p2/antimalware.sh | eicar() { |  | Isječak 54 · EICAR se sastavlja pri pokretanju-->
+<!--KOD v3/p2/antimalware.sh | LAB="/var/tmp/sima-v3p2 |  | Isječak 55 · direktorij po korisniku-->
+<!--KOD v3/p2/antimalware.sh | korak "3. Vlastita baza potpisa | kmd cat "$LAB/baza/sima.hdb" | Isječak 56 · dvije vrste potpisa-->
+<p>Hash potpis (<code>.hdb</code>) je MD5 cijele datoteke, njena veličina i ime: <code>sigtool --md5</code> ga pravi, a <code>sed</code> mijenja ime datoteke u ime potpisa. Sadržajni potpis (<code>.ndb</code>) je <code>ime:tip:pozicija:hex</code>: tip 0 je bilo koja datoteka, <code>*</code> bilo koja pozicija, a niz bajtova je oznaka uzorka pretvorena u heksadecimalni zapis naredbom <code>od</code>.</p>
+<!--KOD v3/p2/antimalware.sh | korak "5. Promjena jednog bajta | kmd clamscan -d "$LAB/baza/sima.ndb" | Isječak 57 · promjena jednog bajta-->
+<div class="out"><div class="hd">izlaz make v3-p2: korak 5</div><pre>$ clamscan -d /var/tmp/sima-v3p2-student/baza/sima.hdb --no-summary .../faktura.pdf.exe
+.../faktura.pdf.exe: OK
+$ clamscan -d /var/tmp/sima-v3p2-student/baza/sima.ndb --no-summary .../faktura.pdf.exe
+.../faktura.pdf.exe: SIMA.Lab.Uzorak.Sadrzaj.UNOFFICIAL FOUND</pre></div>
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Vlastita baza potpisa</strong> ispunjava zahtjev "bez interneta" i, važnije, pokazuje da je potpis obična linija teksta koju student može sam napisati i razumjeti. Službena baza je samo veća verzija istog.</li>
+<li><strong>EICAR sastavljen pri pokretanju</strong>: string nikad nije u repozitoriju u jednom komadu, pa ni GitHub ni antivirus na studentovom računaru (Defender na Windowsu ispod WSL-a) ne prijavljuju repozitorij.</li>
+<li><strong>Isti uzorak, dvije baze, jedan bajt razlike</strong>: dva susjedna reda ispisa ("OK" i "FOUND") objašnjavaju zašto antivirusi kombinuju vrste potpisa i zašto se baza ažurira više puta dnevno.</li>
+<li><strong>Direktorij po korisniku</strong>: raniji prolaz sa <code>sudo</code> ne ostavlja datoteke koje običan korisnik ne može obrisati; vježba radi s najmanjim potrebnim privilegijama.</li>
+<li><strong><code>faktura.pdf.exe</code></strong>: dvostruka ekstenzija u prilogu e-pošte je stvaran i čest trik, pa i ime uzorka uči nešto.</li>
+</ul>
+</section>
+
+<section>
+<div class="kicker">Vježba 3 · Primjer 3 · v3/p3</div>
+<h2>Održavanje tvrdog diska: čišćenje, defragmentacija i TRIM</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v3-p3          # zauzeće diska i šta se može čistiti, samo čita
+make v3-p3-lab      # automatsko čišćenje, fragmentacija, e4defrag, fstrim (sudo)
+make v3-p3-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Disk se puni (keš, dnevnici, privremene datoteke), a kod HDD-a i fragmentira, pa računar usporava. Na Windowsu to rješavaju Storage Sense i "Defragment and Optimize Drives". Treba pokazati šta zauzima prostor, kako se čišćenje automatizuje, šta je fragmentacija i zašto se SSD ne defragmentira.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>pregled zauzeća bez brisanja ičega,</li>
+<li>automatsko čišćenje po starosti datoteka, s mehanizmom koji se koristi u praksi,</li>
+<li>ponovljiva, mjerljiva fragmentacija i defragmentacija,</li>
+<li>TRIM kao ispravno održavanje SSD-a.</li>
+</ul>
+<p><strong>Arhitektura.</strong> Čišćenje radi <code>systemd-tmpfiles</code> (isti mehanizam koji Linux koristi za <code>/tmp</code>) nad direktorijem vježbe. Fragmentacija se radi na posebnom praznom disku od 128 MB (ext4 na loop uređaju), da rezultat ne zavisi od stanja diska računara.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v3/p3/sima-ciscenje.conf | d /var/tmp/sima-temp |  | Isječak 58 · pravilo čišćenja (tmpfiles.d)-->
+<!--KOD v3/p3/disk.sh | local verzija | kmd ls -l --time-style=+%F "$TEMP" | Isječak 59 · čišćenje i rezerva za stariji systemd-->
+<p><code>m:7d</code> znači: briši sadržaj stariji od 7 dana, gledajući samo vrijeme izmjene (mtime). Bez <code>m:</code> bi se gledalo i vrijeme promjene inode-a (ctime), koje se ne može postaviti unazad, pa datoteke "ostarjele" naredbom <code>touch -d</code> ne bi bile obrisane. systemd stariji od verzije 250 ne poznaje tu oznaku, pa skripta tada koristi <code>find -mtime +7 -delete</code>.</p>
+<!--KOD v3/p3/disk.sh | korak "2. Fragmentacija | kmd filefrag "$MNT/izvjestaj.dat" "$MNT/baza.dat" | Isječak 60 · namjerno izazvana fragmentacija-->
+<p>Dvije datoteke se pišu naizmjenično u komadima od 64 KB, a <code>sync</code> nakon svakog komada tjera ext4 da blokove dodijeli odmah. Komadi dvije datoteke se zato smjenjuju na disku i svaka datoteka završi u 64 dijela (extenta). <code>e4defrag</code> zatim slaže dijelove jedne datoteke u susjedne blokove.</p>
+<div class="out"><div class="hd">izlaz make v3-p3-lab: koraci 2 i 3</div><pre>/mnt/sima-hdd/izvjestaj.dat: 64 extents found
+/mnt/sima-hdd/baza.dat: 64 extents found
+$ e4defrag /mnt/sima-hdd/izvjestaj.dat
+ Success:			[1/1]
+/mnt/sima-hdd/izvjestaj.dat: 1 extent found
+/mnt/sima-hdd/baza.dat: 64 extents found
+$ fstrim -v /mnt/sima-hdd
+/mnt/sima-hdd: 90 MiB (94392320 bytes) trimmed</pre></div>
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>systemd-tmpfiles kao "Storage Sense"</strong>: uči se mehanizam koji sistem već koristi, a ne posebna skripta za brisanje; pravilo je jedna linija koja na pravom sistemu ide u <code>/etc/tmpfiles.d/</code>, a izvršava je dnevni timer.</li>
+<li><strong>Jedna nova datoteka u čišćenju</strong>: dokazuje da pravilo briše po starosti, a ne sve.</li>
+<li><strong>Poseban mali disk za fragmentaciju</strong> ispunjava zahtjev "ponovljivo": na praznom ext4 je rezultat uvijek isti (64 extenta), a disk računara nije pogođen.</li>
+<li><strong>Defragmentira se samo jedna datoteka</strong>: "prije" i "poslije" su u istom ispisu.</li>
+<li><strong>Iskreno o ext4</strong>: uz rezultat se objašnjava da ext4 pri normalnom radu malo fragmentira (odgođena alokacija), pa je ovdje fragmentacija namjerno izazvana; ručna defragmentacija na Linuxu rijetko treba.</li>
+<li><strong>Čišćenje u pregledu se samo predlaže</strong>: <code>apt clean</code>, <code>journalctl --vacuum</code> i brisanje keša brišu stvarne podatke računara.</li>
+</ul>
+</section>
+
+<section>
+<div class="kicker">Vježba 3 · Primjer 4 · v3/p4</div>
+<h2>Tačka vraćanja sistema (Restore Point) na Linuxu</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v3-p4          # provjera systemd timera i skripte, ništa se ne instalira
+make v3-p4-lab      # tačka vraćanja, loša instalacija, vraćanje, automatske tačke (sudo)
+make v3-p4-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Instalacija programa ili promjena postavki pokvari sistem. Treba ga vratiti u prethodno ispravno stanje <strong>bez gubitka korisničkih podataka</strong> nastalih u međuvremenu (slajd: "vraćaju se sistemski fajlovi i aplikacije, podaci se ne vraćaju"). Tačke vraćanja se trebaju praviti automatski (slajd: 1440 minuta), a stare brisati.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>tačka vraćanja je trenutna i ne kopira cijeli sistem,</li>
+<li>vraćanje sistema ne dira korisničke podatke,</li>
+<li>tačka se ne može slučajno izmijeniti,</li>
+<li>automatske tačke jednom dnevno, s ograničenim brojem (retencija).</li>
+</ul>
+<pre class="topo">btrfs disk (/var/tmp/sima-v3p4-btrfs.img -> /mnt/sima-btrfs)
+  @sistem        programi i postavke   (na pravom računaru montiran kao /)
+  @home          podaci korisnika      (na pravom računaru /home)
+  .snapshots/    RP-datum-vrijeme-opis (read-only snapshotovi @sistem)</pre>
+<p><strong>Arhitektura.</strong> btrfs s odvojenim subvolumenima za sistem i podatke, kao standardna btrfs instalacija Ubuntua (<code>@</code> i <code>@home</code>). Tačka vraćanja je read-only snapshot sistemskog subvolumena; isti mehanizam koriste Timeshift i Snapper. Automatika je systemd timer koji pokreće skriptu s retencijom.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v3/p4/napravi-rp.sh | mkdir -p "$KORIJEN/.snapshots" | =done | Isječak 61 · napravi-rp.sh: tačka vraćanja i retencija-->
+<p><code>btrfs subvolume snapshot -r</code> pravi read-only snapshot: zbog copy-on-write je trenutan i ne zauzima prostor dok se sistem ne promijeni. Retencija sortira tačke po <code>ogen</code> (generacija datotečnog sistema u kojoj je snapshot nastao), a ne po imenu, jer imena napravljena u istoj sekundi s različitim opisima ne bi bila sortirana po starosti.</p>
+<!--KOD v3/p4/restore.sh | korak "4. Vraćanje sistema | =  stanje | Isječak 62 · vraćanje sistema zamjenom subvolumena-->
+<p>Vraćanje je zamjena subvolumena: pokvareni <code>@sistem</code> se skloni, iz tačke vraćanja se napravi nova, upisiva kopija pod istim imenom, a pokvareni se briše. <code>@home</code> se ne dira, pa podaci nastali poslije tačke ostaju.</p>
+<!--KOD v3/p4/sima-restore-point.timer | [Timer] | RandomizedDelaySec | Isječak 63 · automatska tačka jednom dnevno-->
+<div class="out"><div class="hd">izlaz make v3-p4-lab: korak 4</div><pre>   verzija programa (sistem):         1.0 (radi)
+   konfiguracija (sistem):            port=80
+   dokumenti korisnika (podaci):      diplomski-poglavlje1.txt diplomski-poglavlje2.txt</pre></div>
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Copy-on-write snapshot</strong> ispunjava zahtjev "trenutno i bez kopiranja": zato se tačke mogu praviti često (dnevno i prije svake instalacije), za razliku od pune kopije.</li>
+<li><strong>Granica sistem/podaci je fizička</strong> (dva subvolumena), a ne lista izuzetaka: podaci se ne mogu slučajno vratiti jer nisu u snapshotu.</li>
+<li><strong>Read-only tačke</strong>: tačka vraćanja se ne može pokvariti; za vraćanje se iz nje pravi nova kopija, pa ista tačka ostaje za sljedeći put.</li>
+<li><strong>Korisnik piše novi dokument između tačke i vraćanja</strong>: jedini način da se pokaže zahtjev "podaci se ne vraćaju".</li>
+<li><strong>systemd timer umjesto cron-a</strong>: <code>Persistent=true</code> pravi propuštenu tačku nakon pokretanja ugašenog računara, a <code>RandomizedDelaySec</code> sprečava da svi računari u mreži prave tačke u istoj sekundi.</li>
+<li><strong>Retencija u istoj skripti</strong>: tačke ne mogu napuniti disk ni kad timer radi mjesecima.</li>
+</ul>
+</section>
+
+<section>
+<div class="kicker">Vježba 3 · Primjer 5 · v3/p5</div>
+<h2>Nadgledanje performansi (Task Manager) i programi pri pokretanju (Startup)</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v3-p5          # opterećenje, memorija, procesi, disk, servisi pri startu, samo čita
+make v3-p5-lab      # zaglavljen proces, prioritet, gašenje; servis pri startu (sudo)
+make v3-p5-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Računar je spor. Treba utvrditi da li je uzrok CPU, memorija ili disk, pronaći proces koji troši resurse, smiriti ga ili ugasiti, i kontrolisati šta se pokreće sa sistemom.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>Linux ekvivalent svake kartice Task Managera (Processes, Performance, Startup),</li>
+<li>kontrolisan problem koji se uvijek može pronaći i sigurno ugasiti,</li>
+<li>program koji se pokreće sa sistemom, pa njegovo isključivanje,</li>
+<li>bez ostataka na računaru nakon vježbe.</li>
+</ul>
+<table class="t">
+<tr><th>Task Manager</th><th>Linux</th></tr>
+<tr><td>Processes</td><td><code>top</code>, <code>ps aux --sort=-%cpu</code></td></tr>
+<tr><td>Performance (CPU, RAM, disk)</td><td><code>uptime</code> (load), <code>free -h</code>, <code>vmstat</code>, <code>iostat</code></td></tr>
+<tr><td>End task</td><td><code>kill</code>, <code>pkill</code></td></tr>
+<tr><td>Startup (Enabled/Disabled)</td><td><code>systemctl enable/disable</code>, <code>systemd-analyze blame</code></td></tr>
+</table>
+<p><strong>Arhitektura.</strong> Standardni alati (procps, sysstat, systemd). Problem je jedan proces s prepoznatljivim imenom koji troši jedno jezgro; program pri pokretanju je systemd servis iz repozitorija.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v3/p5/nadzor.sh | korak "1. Simulacija problema | kmd sh -c "ps -eo pid,user,%cpu,%mem,etime | Isječak 64 · zaglavljen proces i pronalaženje krivca-->
+<p><code>exec -a sima-zaglavljen</code> daje procesu vlastito ime u <code>ps</code>, pa se lako pronalazi i gasi, a beskonačna petlja <code>while :; do :; done</code> troši jedno cijelo jezgro bez ikakvih dodatnih alata.</p>
+<!--KOD v3/p5/nadzor.sh | korak "2. Prioritet | kmd pkill -f sima-nepostojeci | Isječak 65 · prioritet i gašenje procesa-->
+<!--KOD v3/p5/sima-demo.service | [Unit] | WantedBy | Isječak 66 · servis koji se pokreće sa sistemom-->
+<!--KOD v3/p5/nadzor.sh | korak "4. Program koji se pokreće | kmd systemctl is-active "$SERVIS" | Isječak 67 · enable i disable (Startup)-->
+<p><code>WantedBy=multi-user.target</code> znači da se servis pokreće pri normalnom pokretanju sistema; <code>enable</code> pravi tu vezu, a <code>disable</code> je briše. <code>--now</code> uz to odmah pokreće ili zaustavlja servis.</p>
+<!--KOD v3/p5/nadzor.sh | ima_systemd() { |  | Isječak 68 · rad i bez systemd-a-->
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Standardni alati</strong> umjesto htop-a ili grafičkih alata: postoje na svakom serveru, rade preko SSH-a i daju ispis koji se može koristiti i u skripti.</li>
+<li><strong>Problem napravljen namjerno i kontrolisano</strong>: jedan proces, jedno jezgro, poznato ime. Ishod je isti kod svih studenata, a proces se uvijek može sigurno ugasiti, i po PID-u i po imenu.</li>
+<li><strong>Prioritet prije gašenja</strong>: proces koji radi koristan posao se u praksi često samo "smiri" (<code>renice</code>), a ne gasi.</li>
+<li><strong>Startup na Linuxu je systemd</strong>: <code>enable</code>/<code>disable</code> su tačan ekvivalent Enabled/Disabled iz Task Managera, a servis ima i ono što Startup nema (<code>Restart=on-failure</code>, dnevnik u <code>journalctl</code>).</li>
+<li><strong>Bez systemd-a vježba ne pada</strong>: dio sa servisom se preskače uz poruku (WSL bez <code>systemd=true</code>), a ostatak radi.</li>
+</ul>
+<div class="note warn"><span class="lbl">Napomena</span>Dio sa servisom (koraci 4 i 5) nije pokretan u razvojnom okruženju (bez systemd-a); ostatak primjera jeste.</div>
+</section>
+
+<footer>Sistemska i mrežna administracija · I ciklus, 3. godina, V semestar · vježbe, grupa A · akademska 2026/27 · Vježbe 1 do 3 (V6, V7, V8)</footer>
+</body></html>

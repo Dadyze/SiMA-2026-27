@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="bs"><head><meta charset="utf-8">
+<title>SiMA – Bilješke s vježbi – Vježbe 1 do 3</title>
+<link rel="stylesheet" href="style.css"></head><body>
+
+<header class="top"><img src="logo.png" alt="Univerzitet u Zenici, Politehnički fakultet"><div class="uni"><b>Univerzitet u Zenici</b><span>Politehnički fakultet · Odsjek za softversko inženjerstvo</span></div></header>
+
+<div class="kicker">Bilješke s vježbi · Vježbe 1 do 3 (prezentacije V6, V7 i V8)</div>
+<h1>Sistemska i mrežna administracija na Linuxu</h1>
+<p class="lead">Konfigurisanje mreže i mrežnog okruženja, održavanje mreže i računara te održavanje klijentskog operativnog sistema. Svaki primjer s vježbi je skripta u repozitoriju koja se pokreće jednom naredbom <code>make</code>, a ovaj dokument za svaki primjer objašnjava šta se rješava, kako je napravljeno i zašto baš tako.</p>
+
+<table class="meta">
+<tr><td>Predmet</td><td>Sistemska i mrežna administracija</td></tr>
+<tr><td>Studij</td><td>I ciklus studija, 3. godina, V semestar, akademska godina 2026/27</td></tr>
+<tr><td>Oblik nastave</td><td>Vježbe, grupa A</td></tr>
+<tr><td>Asistent</td><td>ass. Mr. Adin Jahić</td></tr>
+<tr><td>Prezentacije</td><td>Vježbe br. 6, 7 i 8 (<code>docs/V6_SiMA.pdf</code>, <code>V7_SiMA.pdf</code>, <code>V8_SiMA.pdf</code>)</td></tr>
+<tr><td>Kod</td><td>github.com/Dadyze/SiMA-2026-27 (mape <code>v1</code>, <code>v2</code> i <code>v3</code>)</td></tr>
+</table>
+
+<section>
+<div class="kicker">Okvir</div>
+<h2>Ciljevi i način rada</h2>
+<p>Prezentacije s vježbi opisuju administraciju na primjeru Windowsa i komercijalne mrežne opreme. Ovdje se iste teme rade na <strong>Linuxu</strong>: umjesto čarobnjaka i web sučelja koriste se naredbe, a svaki postupak je zapisan u skripti, pa se može ponoviti, pregledati i mijenjati. Za rad nije potrebna dodatna oprema: mreže se grade od <strong>Linux network namespace-ova</strong> (izolirani mrežni stekovi unutar jednog računara), a diskovi su obične datoteke prikačene kao <strong>loop uređaji</strong>. Mreža i diskovi računara pri tome ostaju netaknuti.</p>
+<p>Nakon vježbi student je u stanju:</p>
+<ul>
+<li>konfigurisati mrežno sučelje statički i preko DHCP-a i objasniti ulogu adrese, maske, gatewaya i DNS-a,</li>
+<li>podijeliti IPv4 mrežu na podmreže, napraviti IP plan i ostvariti segmente kao VLAN-ove,</li>
+<li>objasniti hijerarhijsku LAN mrežu, bekap internet link i failover,</li>
+<li>sistematično dijagnosticirati kvar u mreži naredbama <code>ping</code>, <code>ip</code>, <code>traceroute</code> i <code>ss</code>,</li>
+<li>izračunati pouzdanost složenog sistema i napraviti, pokvariti i obnoviti softverski RAID 1,</li>
+<li>održavati štampače, particije, ažuriranja, zaštitu od malwarea, disk, tačke vraćanja i procese klijentskog računara.</li>
+</ul>
+
+<h3>Kako čitati opis primjera</h3>
+<p>Svaki primjer je opisan istim redom, kroz tri vrste inženjerskih odluka:</p>
+<table class="t">
+<tr><th>Vrsta odluke</th><th>Pitanje</th><th>Sadržaj</th></tr>
+<tr><td><span class="tag a">Arhitektonske</span></td><td>Šta želimo uraditi?</td><td>definicija problema, makroskopski zahtjevi, od kojih dijelova se sistem sastoji (topologija, diskovi, servisi) i kako su povezani</td></tr>
+<tr><td><span class="tag i">Implementacijske</span></td><td>Kako je to konkretno napravljeno?</td><td>programski pristup i isječci koda iz repozitorija, objašnjeni red po red</td></tr>
+<tr><td><span class="tag d">Dizajnerske</span></td><td>Zašto baš ovako?</td><td>veza između prve dvije: zašto izabrana implementacija u bashu dobro ostvaruje arhitektonske odluke, s inženjerskog stajališta (pouzdanost, ponovljivost, sigurnost, čitljivost)</td></tr>
+</table>
+<div class="note"><span class="lbl">Isječci koda su stvarni kod</span>Isječci u ovom dokumentu se pri generisanju PDF-a uzimaju direktno iz datoteka repozitorija (oznaka u zaglavlju bloka je <code>datoteka:linije</code>). Ono što piše u dokumentu je ono što se izvršava.</div>
+
+<h3>Okruženje i pokretanje</h3>
+<p>Sve se pokreće u Linux okruženju: Ubuntu 22.04/24.04 ili WSL2 na Windowsu. Alate instalira skripta <code>00-setup.sh</code> (idempotentna, može se pokrenuti više puta).</p>
+<div class="code"><div class="hd"><span>bash</span><span>Isječak 0 · početak</span></div><pre>cd ~ &amp;&amp; git clone https://github.com/Dadyze/SiMA-2026-27.git &amp;&amp; cd SiMA-2026-27
+./00-setup.sh          # instalira alate i provjerava mogućnosti jezgre (VLAN, md RAID, btrfs)
+make check             # da li su alati prisutni
+make help              # svi ciljevi po vježbama
+make v1-p1             # prvi primjer; zatim v1-p1-lab, v1-p2 ... v3-p5
+make v1-p1-desc        # kratak opis primjera u terminalu (isti tekst je u v1/p1/OPIS.md)</pre></div>
+<div class="note"><span class="lbl">Pravilo: osnovni cilj samo čita</span>Osnovni cilj svakog primjera (npr. <code>make v1-p3</code>) ne mijenja sistem: pregled stanja računara, shema laba ili ispis naredbi. Ciljevi s sufiksom <code>-lab</code> grade izolirani lab (traže <code>sudo</code>), a <code>-apply</code> i <code>-up</code> mijenjaju računar (paketi, postavke, VM). Za svaki postoji <code>-clean</code>. <code>PAUZA=1</code> zaustavlja vježbu nakon svakog koraka.</div>
+</section>
+
+<section>
+<div class="kicker">Zajednička osnova svih primjera</div>
+<h2>Biblioteka <code>lib/zajednicko.sh</code></h2>
+<h3><span class="tag a">Arhitektonske</span>Jedan način rada za sve vježbe</h3>
+<p>Sve vježbe imaju iste potrebe: ispisati naredbu prije izvršavanja (da se na nastavi vidi šta se radi), izvršiti je u pravom namespace-u, provjeriti povezanost i na kraju sve očistiti. Zato su te radnje u jednoj biblioteci koju svaka skripta uključuje, a skripte opisuju samo ono što je specifično za primjer.</p>
+<h3><span class="tag i">Implementacijske</span>Funkcije biblioteke</h3>
+<!--KOD lib/zajednicko.sh | # kmd [ns] naredba | =} | Isječak 1 · kmd: ispiši pa izvrši-->
+<p><code>kmd</code> je središnja funkcija svih vježbi. Ako je prvi argument ime postojećeg namespace-a (<code>sima-*</code>), naredba se izvršava u njemu (<code>ip netns exec</code>) i ispisuje s oznakom, npr. <code>[pc]$ ip route</code>. Funkcija uvijek vraća 0: dio vježbi namjerno pokazuje naredbe koje ne uspijevaju (ping bez gatewaya), a skripte rade s <code>set -o pipefail</code> bez <code>-e</code>, pa greška jedne naredbe ne prekida vježbu.</p>
+<!--KOD lib/zajednicko.sh | # ping1 ns cilj | =} | Isječak 2 · ping1: jedan ping, ishod OK/NE-->
+<!--KOD lib/zajednicko.sh | # ns_obrisi ime | =} | Isječak 3 · ns_obrisi: čišćenje bez ostataka-->
+<!--KOD lib/zajednicko.sh | veza() { | ns_novi() { | Isječak 4 · veza i ns_novi: kabl i "računar"-->
+<p><code>ns_obrisi</code> prvo gasi procese koji su ostali u namespace-u (DHCP i DNS serveri, web server), pa ga briše; s namespace-om nestaju i njegova sučelja. <code>veza</code> pravi veth par: virtuelni kabl čija su dva kraja odmah u dva različita namespace-a.</p>
+<h3><span class="tag d">Dizajnerske</span>Zašto bash i zašto biblioteka</h3>
+<ul>
+<li><strong>Bash</strong> je jezik u kojem administrator stvarno radi: svaka linija skripte je naredba koju student može kopirati i pokrenuti ručno. Programski jezik višeg nivoa bi sakrio upravo ono što se uči.</li>
+<li><strong>Ispis prije izvršavanja</strong> čini skriptu i demonstracijom i zapisnikom: izlaz vježbe je ujedno uputstvo kako se isto radi na pravoj mašini.</li>
+<li><strong>Čišćenje kao prvi korak svake vježbe</strong> (<code>down</code> pa izgradnja) čini vježbe idempotentnim: prekinuta vježba se samo ponovo pokrene.</li>
+<li><strong>Namespace-ovi i loop uređaji</strong> daju prave mrežne stekove i blok uređaje bez hipervizora; greška u vježbi ne može prekinuti mrežu ni oštetiti disk računara.</li>
+</ul>
+<table class="t">
+<tr><th>Windows / oprema s vježbi</th><th>Linux</th><th>Primjer</th></tr>
+<tr><td><code>ipconfig /all</code>, statička IP i DHCP</td><td><code>ip addr</code>, <code>ip route</code>, <code>resolv.conf</code>, <code>dhcpcd</code>, netplan</td><td>v1-p1</td></tr>
+<tr><td>web sučelje upravljivog sviča (VLAN)</td><td><code>bridge vlan</code></td><td>v1-p4</td></tr>
+<tr><td>Dual WAN ruter (failover)</td><td>metrike ruta, policy routing, nadzorna skripta</td><td>v1-p5</td></tr>
+<tr><td><code>ping</code>, <code>tracert</code>, <code>netstat -an</code></td><td><code>ping</code>, <code>traceroute</code>, <code>ss -tan</code></td><td>v2-p1</td></tr>
+<tr><td>Devices and Printers</td><td>CUPS (<code>lpadmin</code>, <code>lpstat</code>, <code>cancel</code>)</td><td>v2-p3</td></tr>
+<tr><td>Disk Management, Mirrored Volume</td><td><code>mdadm</code> / btrfs RAID 1</td><td>v2-p4</td></tr>
+<tr><td>particije, System Reserved</td><td><code>sfdisk</code>, EFI particija, <code>blkid</code>, <code>fstab</code></td><td>v2-p5</td></tr>
+<tr><td>Hyper-V Manager</td><td>KVM/libvirt (<code>virt-install</code>, <code>virsh</code>)</td><td>v2-p6</td></tr>
+<tr><td>Windows Update</td><td><code>apt</code>, <code>unattended-upgrades</code></td><td>v3-p1</td></tr>
+<tr><td>Microsoft Defender</td><td>ClamAV</td><td>v3-p2</td></tr>
+<tr><td>Storage Sense, defragmentacija</td><td><code>systemd-tmpfiles</code>, <code>e4defrag</code>, <code>fstrim</code></td><td>v3-p3</td></tr>
+<tr><td>Restore Point</td><td>btrfs snapshot, systemd timer</td><td>v3-p4</td></tr>
+<tr><td>Task Manager, Startup</td><td><code>ps</code>, <code>top</code>, <code>vmstat</code>, <code>kill</code>, <code>systemctl enable/disable</code></td><td>v3-p5</td></tr>
+</table>
+</section>

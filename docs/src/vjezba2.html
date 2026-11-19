@@ -1,0 +1,255 @@
+<div class="dio">
+<div class="kicker">Vježba 2 · prezentacija V7</div>
+<h1>Održavanje mreže i računara</h1>
+<p class="lead">Kad mreža i računari rade, posao administratora je da tako i ostane: dijagnostika kvarova (<code>v2/p1</code>), procjena pouzdanosti (<code>v2/p2</code>), održavanje štampača (<code>v2/p3</code>), zaštita podataka RAID-om (<code>v2/p4</code>), particije i pokretanje sistema (<code>v2/p5</code>) te virtuelne mašine (<code>v2/p6</code>). Diskovi u vježbama su datoteke prikačene kao loop uređaji.</p>
+</div>
+
+<section>
+<div class="kicker">Vježba 2 · Primjer 1 · v2/p1</div>
+<h2>Dijagnostika LAN mreže i traženje kvara</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v2-p1               # tabela Windows i Linux naredbi, shema laba
+make v2-p1-lab           # naredbe na ispravnoj mreži (sudo)
+make v2-p1-kvar          # slučajan, skriven kvar   (KVAR=1..6 bira određeni)
+make v2-p1-dijagnoza     # dijagnostika odozdo prema gore
+make v2-p1-rjesenje      # koji je kvar bio i vraćanje ispravnog stanja
+make v2-p1-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Korisnik javlja "nemam interneta, klix.ba ne radi". Isti simptom ima najmanje šest uzroka, od kabla do aplikacije. Administratoru treba sistematičan postupak koji brzo pokaže na kojem sloju je kvar, umjesto nasumičnog restartovanja.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>sve CLI naredbe sa slajdova (<code>ping</code>, <code>ipconfig</code>, <code>tracert</code>, <code>netstat</code>) i njihovi Linux ekvivalenti na mreži koja stvarno radi,</li>
+<li>stvarna stanja TCP konekcija (LISTEN, ESTABLISHED, TIME_WAIT) sa slajda o stanjima konekcija,</li>
+<li>kvarovi na različitim slojevima, koji se mogu ubaciti skriveno (vježba) ili određeno (demonstracija),</li>
+<li>postupak dijagnostike koji staje na uzroku i kaže šta dalje provjeriti,</li>
+<li>isti lab se kvari i popravlja više puta bez ponovne izgradnje.</li>
+</ul>
+<pre class="topo">[pc] 192.168.20.50 --- [ruter] 192.168.20.1 / 203.0.113.2 --- [internet] web klix.ba 198.51.100.10:80
+                                                                          DNS 198.51.100.53</pre>
+<p><strong>Arhitektura.</strong> Tri namespace-a. Na "internetu" rade pravi servisi: web server i DNS server, pa su odgovori, kodovi grešaka i stanja konekcija stvarni. Kvar je <em>stanje</em> laba, a ne poseban lab: jedna funkcija ga ubacuje, a druga vraća sve u ispravno stanje.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v2/p1/dijagnostika.sh | lab_gore() { | =} | Isječak 24 · lab s pravim DNS i web serverom-->
+<!--KOD v2/p1/dijagnostika.sh | web_gore() { |  | Isječak 25 · web server u namespace-u interneta-->
+<p>DNS je <code>dnsmasq</code> s jednim zapisom (<code>klix.ba</code>), a web server je modul <code>http.server</code> iz Pythona, pokrenut u namespace-u interneta i vezan za adresu servera. Oba se pokreću u pozadini, a njihovi PID-ovi se čuvaju u <code>/run/sima-v2p1</code>.</p>
+<!--KOD v2/p1/dijagnostika.sh | korak "6. ss | info "-t TCP | Isječak 26 · stvarna stanja TCP konekcija-->
+<p>Stanja konekcija se prave namjerno: <code>exec 3&lt;&gt;/dev/tcp/...</code> je bash-ov način da se otvori TCP konekcija bez dodatnih alata; drži se otvorena 15 s (ESTAB). <code>curl</code> pravi jedan zahtjev; HTTP/1.0 server prvi zatvara konekciju, pa ona na serveru ostaje u stanju TIME-WAIT.</p>
+<!--KOD v2/p1/dijagnostika.sh | KVAROVI=( | =) | Isječak 27 · katalog kvarova-->
+<!--KOD v2/p1/dijagnostika.sh | kvar() { | =} | Isječak 28 · ubacivanje kvara-->
+<p>Svaki kvar je jedna naredba koja mijenja tačno jedan dio laba. Prije kvara se uvijek poziva <code>ispravno</code>, pa je u labu u svakom trenutku najviše jedan kvar. Broj kvara se zapisuje u datoteku, a za slučajan kvar se ispisuje samo prijava korisnika.</p>
+<!--KOD v2/p1/dijagnostika.sh | dijagnoza() { | =} | Isječak 29 · dijagnostika odozdo prema gore-->
+<p>Dijagnoza je niz provjera po slojevima, od fizičkog prema aplikacijskom: link (<code>LOWER_UP</code> znači da je kabl spojen), loopback i vlastita adresa, gateway pročitan iz tabele usmjeravanja, udaljena IP adresa, DNS i na kraju servis. Svaka provjera je <code>provjeri opis naredba</code>, a <code>||</code> nakon nje ispisuje vjerovatan uzrok i završava funkciju. DNS se smatra ispravnim samo ako <code>dig</code> vrati IPv4 adresu, jer <code>dig</code> i poruku o grešci piše na standardni izlaz.</p>
+<div class="out"><div class="hd">izlaz make v2-p1-kvar KVAR=3 pa make v2-p1-dijagnoza</div><pre>   OK   1. link na eth0 (LOWER_UP: kabl je spojen)
+   OK   2. loopback i vlastita adresa (ping 127.0.0.1 i ping vlastite IP)
+   OK   3. gateway iz tabele usmjeravanja odgovara
+   OK   4. udaljeni host po IP adresi (198.51.100.10)
+   NE   5. DNS: klix.ba se prevodi u adresu
+   Uzrok: DNS (pogrešan ili nedostupan DNS server). IP promet radi, imena ne.</pre></div>
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Pravi servisi umjesto simuliranih odgovora</strong>: <code>dig</code>, <code>curl</code> i <code>ss</code> pokazuju stvarno ponašanje, uključujući TIME-WAIT, koji se ne može lažirati. Student uči na istim izlazima koje će vidjeti na serveru.</li>
+<li><strong>Kvar kao stanje i funkcija <code>ispravno</code></strong> čine vježbu ponovljivom: kvar se ubacuje i popravlja sekundama, pa se za jedan termin može uraditi svih šest.</li>
+<li><strong>Šest kvarova na šest slojeva</strong> (kabl, adresa, gateway, ruter, DNS, aplikacija) pokrivaju cijeli put paketa; kvar "servis ne radi" je namjerno uključen jer je mreža tada potpuno ispravna, a korisnik i dalje "nema interneta".</li>
+<li><strong>Dijagnoza staje na prvom neuspjehu</strong>: kad padne niži sloj, padaju i svi viši, pa bi njihov ispis samo zbunjivao. Redoslijed provjera je isti onaj koji se uči na vježbama (OSI model odozdo).</li>
+<li><strong>Skriven kvar</strong>: cilj je vježbati dijagnostiku, a ne čitati rješenje; rješenje je posebna naredba.</li>
+</ul>
+</section>
+
+<section>
+<div class="kicker">Vježba 2 · Primjer 2 · v2/p2</div>
+<h2>Određivanje pouzdanosti složenih sistema</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v2-p2                                          # primjeri s vježbi
+python3 v2/p2/pouzdanost.py serijski 0.95 0.9 0.99   # vlastiti račun
+python3 v2/p2/pouzdanost.py paralelno 0.97 0.97</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Iz pouzdanosti komponenti (vjerovatnoća da komponenta radi u periodu, npr. godinu dana) treba izračunati pouzdanost sistema i pokazati zašto se kritične komponente (diskovi, napajanje) udvostručuju. Primjeri s vježbi: RAID 1 od dva diska s pouzdanošću 0.97 i računar od komponenti s pouzdanošću 0.95.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>serijska veza: sistem radi samo ako rade sve komponente, <code>R = R1 · R2 · ... · Rn</code>,</li>
+<li>paralelna veza: sistem otkaže samo ako otkažu sve, <code>N = N1 · N2 · ... · Nn</code>, <code>R = 1 - N</code>,</li>
+<li>kombinovana veza (blok-dijagram pouzdanosti),</li>
+<li>postupak s međukoracima, kao na tabli, i proizvoljan račun za zadatke.</li>
+</ul>
+<p><strong>Arhitektura.</strong> Dvije funkcije, serijska i paralelna veza, od kojih se gradi svaki složen sistem: kombinovana veza je samo serijska veza čiji su neki članovi paralelne veze.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v2/p2/pouzdanost.py | def serijski | return 1 - reduce | Isječak 30 · serijska i paralelna veza-->
+<p><code>reduce</code> množi proizvoljan broj članova, pa funkcije rade za <em>n</em> komponenti. Paralelna veza je proizvod nepouzdanosti <code>(1 - x)</code>, oduzet od 1.</p>
+<!--KOD v2/p2/pouzdanost.py | print("   Poboljšanje: | r2 = serijski(napajanje | Isječak 31 · kombinovana veza: računar s redundancijom-->
+<div class="out"><div class="hd">izlaz make v2-p2 (skraćeno)</div><pre>   N = N1 * N2 = (1 - 0.97) * (1 - 0.97) = 0.03 * 0.03 = 0.0009
+   R = 1 - N = 1 - 0.0009 = 0.9991 = 99.91 %
+   R = 0.95 * 0.95 * 0.95 * 0.95 * 0.95 = 0.95^5 = 0.7738 = 77.38 %
+   R = 0.9975 * 0.95 * 0.95 * 0.95 * 0.9975 = 0.8531 = 85.31 %</pre></div>
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Funkcije kao blokovi dijagrama</strong>: kod <code>serijski(paralelno(p, p), p, p, p, paralelno(p, p))</code> izgleda isto kao blok-dijagram na tabli, pa je prevod s papira u kod direktan.</li>
+<li><strong>Python bez biblioteka</strong>: račun, ne upravljanje sistemom; radi bez root-a i na ispitnom računaru.</li>
+<li><strong>Treći primjer (redundantno napajanje i RAID 1)</strong> povezuje formulu s praksom iz istih vježbi (pitanje: "kako se povećava pouzdanost napajanja servera") i s <code>v2/p4</code>.</li>
+<li><strong>Pravilo uz rezultat</strong>: serijska veza je uvijek manje pouzdana od najslabije komponente, paralelna uvijek pouzdanija od najpouzdanije (pitanje 6 s vježbi).</li>
+</ul>
+</section>
+
+<section>
+<div class="kicker">Vježba 2 · Primjer 3 · v2/p3</div>
+<h2>Održavanje štampača (CUPS)</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v2-p3          # štampači i redovi čekanja (lpstat -t), samo čita
+make v2-p3-lab      # mrežni štampač, štampa, zastoji, zaglavljen red (sudo)
+make v2-p3-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Najčešći softverski zastoji štampe sa slajdova: mrežni štampač nedostupan, poslovi se gomilaju u redu, red je zaglavljen. Administrator treba znati instalirati mrežni štampač, pratiti red i otkloniti zastoj bez restartovanja svega.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>pravi servis za štampu (CUPS) s pravim redom čekanja,</li>
+<li>"mrežni štampač" koji se može isključiti i uključiti, da se vidi ponašanje kad je nedostupan,</li>
+<li>bez papira i bez stvarnog štampača, a sadržaj odštampanog posla da se može pročitati.</li>
+</ul>
+<pre class="topo">lp  -->  CUPS red "sima-stampac"  --(socket://127.0.0.1:9100, RAW/JetDirect)-->  emulator_stampaca.py  -->  posao-NNN.txt</pre>
+<p><strong>Arhitektura.</strong> CUPS je servis računara, a štampač je emulator: mali TCP server na portu 9100, istom portu na kojem slušaju mrežni štampači (RAW/JetDirect). Emulator radi na <code>127.0.0.1</code>, ne u namespace-u, jer bi inače CUPS trebao mrežnu vezu prema labu, što bi promijenilo mrežu računara.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v2/p3/emulator_stampaca.py | s = socket.socket() | print(f"{time.strftime | Isječak 32 · emulator mrežnog štampača-->
+<p>Emulator prihvata konekciju, čita sve dok druga strana ne zatvori vezu (tako izgleda RAW štampa) i zapisuje posao. Posao se imenuje po broju postojećih datoteka, pa ponovno pokretanje emulatora ne prepisuje ranije poslove.</p>
+<!--KOD v2/p3/stampac.sh | cups_gore() { | =} | Isječak 33 · CUPS mora raditi-->
+<!--KOD v2/p3/stampac.sh | kmd lpadmin -p "$STAMPAC" |  | Isječak 34 · instaliranje mrežnog štampača-->
+<p><code>-E</code> omogućava red i odmah ga pušta u rad, <code>-v</code> je adresa uređaja, <code>-m raw</code> red bez drajvera (posao ide nepromijenjen), a <code>-L</code> i <code>-D</code> su lokacija i opis koji se vide u <code>lpstat -l</code>.</p>
+<!--KOD v2/p3/stampac.sh | korak "4. Zastoj | kmd cupsenable "$STAMPAC" | Isječak 35 · zastoj, otklanjanje i zaglavljen red-->
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Emulator umjesto PDF štampača</strong>: virtuelni PDF štampač nikad nije nedostupan, a zastoj "štampač nedostupan" je glavna tema. Emulator se gasi i pali kao pravi uređaj, a CUPS se ponaša isto kao prema pravom štampaču (ponovni pokušaji, poruka u <code>lpstat -l</code>).</li>
+<li><strong>Port 9100</strong> povezuje lab sa slajdom: mrežni štampač je uređaj s IP adresom i portom, a dijagnostika je ista kao za svaki mrežni servis (ping, provjera porta).</li>
+<li><strong>RAW red</strong>: nema drajvera ni filtera koji bi mogli biti uzrok greške u vježbi; upozorenje CUPS-a o zastarjelim RAW redovima je objašnjeno u ispisu, a za pravi štampač se navodi <code>-m everywhere</code>.</li>
+<li><strong>Čekanje sa vremenskim ograničenjem</strong> (<code>cekaj_red</code>) umjesto fiksnog <code>sleep</code>: CUPS ponovno šalje posao u intervalima, pa vježba čeka tačno onoliko koliko treba.</li>
+<li><strong>Dijeljenje se samo prikazuje</strong>: <code>cupsctl --share-printers</code> bi promijenio postavke CUPS-a računara za cijelu mrežu.</li>
+</ul>
+</section>
+
+<section>
+<div class="kicker">Vježba 2 · Primjer 4 · v2/p4</div>
+<h2>Softverski RAID 1 (ogledalo)</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v2-p4                                   # postojeći RAID nizovi i diskovi, samo čita
+make v2-p4-lab                               # RAID 1, kvar diska, zamjena, obnova (sudo)
+sudo RAID_ALAT=btrfs bash v2/p4/raid1.sh vjezba   # ista vježba s btrfs RAID 1
+make v2-p4-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Disk je komponenta koja najčešće otkazuje, a nosi podatke. Prezentacija pokazuje RAID 1 u BIOS-u i u Windows Disk Managementu. Na Linuxu treba pokazati da ogledalo omogućava rad bez jednog diska, kako se pokvaren disk mijenja bez gubitka podataka i šta RAID ne rješava.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>pravi RAID 1 nad pravim blok uređajima, bez rizika za diskove računara,</li>
+<li>dokaz ispravnosti podataka nakon svakog koraka (ne samo "datoteka postoji"),</li>
+<li>kvar, rad u degradiranom stanju, zamjena i obnova,</li>
+<li>da radi i na jezgrama bez md modula (dio WSL2 jezgri).</li>
+</ul>
+<pre class="topo">/var/tmp/sima-v2p4/disk1.img -> /dev/loopA --\
+                                               RAID 1 -> /mnt/sima-raid   (ext4 na /dev/md/sima-raid1, ili btrfs)
+/var/tmp/sima-v2p4/disk2.img -> /dev/loopB --/
+/var/tmp/sima-v2p4/disk3.img -> /dev/loopC     rezervni disk za zamjenu</pre>
+<p><strong>Arhitektura.</strong> Tri datoteke od 256 MB su diskovi (loop uređaji); jezgra ih vidi kao prave blok uređaje. Ista vježba ima dvije implementacije: <code>mdadm</code> (klasični Linux software RAID, ekvivalent Mirrored Volume) i btrfs RAID 1, a skripta bira onu koju jezgra podržava.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v2/p4/raid1.sh | disk() { | provjera_podataka() { | Isječak 36 · disk, loop uređaj i kontrolni zbir-->
+<!--KOD v2/p4/raid1.sh | izaberi_alat() { | =} | Isječak 37 · izbor implementacije-->
+<!--KOD v2/p4/raid1.sh | korak "2. Kreiranje RAID 1 | kmd df -h "$MNT"; pauza | Isječak 38 · kreiranje ogledala-->
+<p><code>mdadm --run</code> preskače interaktivno pitanje, a <code>--wait</code> čeka kraj početne sinhronizacije. Kod btrfs-a <code>-d raid1 -m raid1</code> znači da su i podaci i metapodaci u ogledalu.</p>
+<!--KOD v2/p4/raid1.sh | korak "4. Kvar diska 2 | provjera_podataka; pauza | Isječak 39 · kvar, degradirani rad, zamjena i obnova-->
+<p>Kod mdadm-a se kvar označava (<code>--fail</code>), pa disk uklanja i dodaje novi; obnova je automatska. Kod btrfs-a se disk stvarno "vadi" (otkači loop uređaj), pa sistem odbija obično montiranje dok se izričito ne traži <code>-o degraded</code>. Zamjena je <code>btrfs replace</code> po broju nestalog diska, a <code>balance</code> u ogledalo vraća blokove upisane za vrijeme kvara (oni su upisani bez kopije).</p>
+<!--KOD v2/p4/raid1.sh | dolje() { | =} | Isječak 40 · čišćenje-->
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Loop uređaji</strong> ispunjavaju zahtjev "pravi blok uređaji bez rizika": mdadm i btrfs ne razlikuju loop od SATA diska, a greška u vježbi pogađa samo datoteke u <code>/var/tmp</code>.</li>
+<li><strong>Dvije implementacije istih koraka</strong> umjesto vježbe koja kod dijela studenata ne radi: izbor alata je jedna funkcija, a koraci (ogledalo, kvar, degradiran rad, zamjena) su isti, pa je pouka ista.</li>
+<li><strong>Kontrolni zbir (sha256)</strong> umjesto <code>ls</code>: dokaz da su podaci bit po bit isti nakon kvara i obnove.</li>
+<li><strong>Upis za vrijeme kvara</strong> pokazuje da sistem nastavlja raditi i objašnjava zašto je kod btrfs-a poslije potreban <code>balance</code>.</li>
+<li><strong>"RAID nije backup" kao zadnji korak</strong>: najčešća zabluda, pokazana jednom naredbom <code>rm</code>.</li>
+<li><strong>Čišćenje briše i tragove</strong> (<code>--zero-superblock</code>, <code>btrfs device scan --forget</code>), pa ponovna vježba uvijek kreće od nule.</li>
+</ul>
+<div class="note warn"><span class="lbl">Napomena</span>Varijanta s btrfs-om je izvršena u razvojnom okruženju; varijanta s mdadm-om nije, jer razvojna jezgra nema md modul.</div>
+</section>
+
+<section>
+<div class="kicker">Vježba 2 · Primjer 5 · v2/p5</div>
+<h2>Particije diska (MBR i GPT), UUID, fstab i boot opcije</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v2-p5          # diskovi, MBR/GPT, UEFI/BIOS, boot opcije i fstab ovog računara, samo čita
+make v2-p5-lab      # MBR, GPT, datotečni sistemi, UUID i fstab na disku-datoteci (sudo)
+make v2-p5-clean</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Instalacija i održavanje klijentskog računara traže razumijevanje tabele particija, posebnih particija (System Reserved/EFI, recovery), datotečnih sistema i toga kako sistem zna šta montirati pri pokretanju. Greška u bilo čemu znači računar koji se ne podiže.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>MBR s primarnim, proširenom i logičkim particijama (ograničenje od 4 primarne),</li>
+<li>GPT raspored UEFI računara: EFI, sistem, podaci, recovery,</li>
+<li>datotečni sistemi, UUID i <code>/etc/fstab</code>,</li>
+<li>bootabilni USB, ali bez rizika da se izbriše pogrešan disk.</li>
+</ul>
+<p><strong>Arhitektura.</strong> Jedan prazan disk od 1 GB (datoteka na loop uređaju s particijama, <code>losetup -P</code>). Na njemu se pravi prvo MBR, a zatim, nakon brisanja, GPT, pa se razlike vide na istom ispisu <code>fdisk -l</code>.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v2/p5/particije.sh | cat > /tmp/sima-mbr.sfdisk | =EOF | Isječak 41 · MBR raspored kao skripta za sfdisk-->
+<!--KOD v2/p5/particije.sh | cat > /tmp/sima-gpt.sfdisk | =EOF | Isječak 42 · GPT raspored-->
+<p>Raspored particija je deklarativna skripta za <code>sfdisk</code>: tip tabele (<code>label</code>), pa po jedna linija za particiju (veličina, tip, ime). Tipovi su skraćenice: <code>83</code> Linux, <code>82</code> swap, <code>5</code> proširena (MBR); <code>U</code> EFI System i <code>L</code> Linux filesystem (GPT). Particija bez veličine zauzima ostatak diska.</p>
+<!--KOD v2/p5/particije.sh | osvjezi() { |  | Isječak 43 · čvorovi particija i bez udev-a-->
+<!--KOD v2/p5/particije.sh | korak "5. UUID | printf '     UUID=%-36s  /podaci | Isječak 44 · UUID i linije za fstab-->
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Disk-datoteka</strong>: isti alati i isti rezultat kao na pravom disku, a diskovi računara nisu u opasnosti; isto načelo kao u <code>v2/p4</code>.</li>
+<li><strong>Raspored kao skripta, prikazan prije primjene</strong>: isti raspored se može ponoviti na mnogo računara (masovna instalacija), a student vidi šta će se desiti prije nego što se desi.</li>
+<li><strong>MBR pa GPT na istom disku</strong> (<code>wipefs</code> između): poređenje bez druge varijable.</li>
+<li><strong>fstab iz stvarnih UUID-ova</strong>: pokazuje zašto se ne koristi <code>/dev/sdX</code> (ime se mijenja kad se doda disk).</li>
+<li><strong>Bootabilni USB se ne izvršava</strong>: <code>dd</code> na pogrešan uređaj briše disk; zato se samo prikazuje, uz upozorenje o razlici <code>sdX</code> i <code>sdX1</code>.</li>
+<li><strong><code>partx -u</code> poslije <code>sfdisk</code></strong>: bez udev-a (kontejneri, dio WSL okruženja) jezgra ne napravi odmah čvorove particija; jedna funkcija čini vježbu prenosivom.</li>
+</ul>
+</section>
+
+<section>
+<div class="kicker">Vježba 2 · Primjer 6 · v2/p6</div>
+<h2>Instaliranje virtuelne mašine (KVM/libvirt umjesto Hyper-V Managera)</h2>
+<div class="code"><div class="hd"><span>bash</span><span>pokretanje</span></div><pre>make v2-p6           # preduslovi i plan, ništa se ne pravi
+make v2-p6-up        # Ubuntu slika (~600 MB, jednom), VM, čekanje na IP (sudo, KVM)
+make v2-p6-status    # stanje i naredbe za upravljanje
+make v2-p6-clean     # SVE=1 briše i preuzetu sliku</pre></div>
+
+<h3><span class="tag a">Arhitektonske</span>Šta želimo uraditi</h3>
+<p><strong>Problem.</strong> Procedura sa slajda (Hyper-V Manager, devet koraka: medij, ime, RAM, mrežni adapter, disk, pokretanje, instalacija) treba se uraditi na Linuxu, i to ponovljivo, jednom naredbom, a ne klikanjem kroz čarobnjak.</p>
+<p><strong>Zahtjevi.</strong></p>
+<ul>
+<li>svaki korak sa slajda ima svoj ekvivalent (RAM 1024 MB, mrežni adapter, novi disk, pokretanje),</li>
+<li>instalacija bez interaktivnog rada, da je može uraditi cijela grupa,</li>
+<li>plan i provjera preduslova i na računaru bez virtualizacije,</li>
+<li>upravljanje VM-om (start, gašenje, kontrolna tačka).</li>
+</ul>
+<table class="t">
+<tr><th>Hyper-V korak</th><th>Linux</th></tr>
+<tr><td>instalacijski medij / ISO</td><td>Ubuntu cloud slika (za ISO: <code>virt-install --cdrom</code>)</td></tr>
+<tr><td>New Virtual Machine, ime</td><td><code>virt-install --name sima-vm</code></td></tr>
+<tr><td>RAM 1024 MB / mrežni adapter</td><td><code>--memory 1024</code> / <code>--network network=default</code></td></tr>
+<tr><td>novi virtuelni disk</td><td><code>qemu-img create -f qcow2 -b osnovna-slika ... 10G</code></td></tr>
+<tr><td>interaktivna instalacija</td><td>cloud-init pri prvom pokretanju</td></tr>
+<tr><td>Checkpoint</td><td><code>virsh snapshot-create-as</code></td></tr>
+</table>
+<p><strong>Arhitektura.</strong> KVM/QEMU hipervizor kojim upravlja libvirt (<code>qemu:///system</code>), NAT mreža <code>default</code>, disk VM-a kao qcow2 sloj iznad jednom preuzete osnovne slike, a podešavanje sistema (korisnik i SSH ključ) radi cloud-init.</p>
+
+<h3><span class="tag i">Implementacijske</span>Kako je napravljeno</h3>
+<!--KOD v2/p6/vm.sh | cat > "$LAB/user-data" | =EOF | Isječak 45 · cloud-init umjesto interaktivne instalacije-->
+<!--KOD v2/p6/vm.sh | virt-install --connect qemu:///system --name "$IME" | --network network=default --cloud-init "user-data | Isječak 46 · kreiranje i pokretanje VM-a-->
+<!--KOD v2/p6/vm.sh | os_id() { |  | Isječak 47 · tip OS-a i na starijim distribucijama-->
+<!--KOD v2/p6/vm.sh | local ip="" i | done | Isječak 48 · čekanje na IP adresu-->
+<p>SSH ključ se uzima od korisnika koji je pozvao <code>sudo</code> (<code>SUDO_USER</code>), ne od root-a, pa se student kasnije prijavljuje svojim ključem. IP adresa se čita iz DHCP zakupa libvirt mreže (<code>virsh domifaddr</code>).</p>
+
+<h3><span class="tag d">Dizajnerske</span>Zašto baš ovako</h3>
+<ul>
+<li><strong>Cloud slika i cloud-init</strong> ispunjavaju zahtjev "bez interaktivnog rada": VM je spremna za oko minutu umjesto dvadesetak minuta instalacije.</li>
+<li><strong>qcow2 sloj iznad osnovne slike</strong>: disk VM-a čuva samo razlike, slika se preuzima jednom, a brisanje VM-a ne briše preuzetu sliku.</li>
+<li><strong>libvirt i mreža <code>default</code></strong>: isti stek koristi <code>virt-manager</code>, grafički alat sličan Hyper-V Manageru, pa student može nastaviti i iz GUI-ja.</li>
+<li><strong>Osnovni cilj samo planira</strong>: provjera preduslova radi i bez KVM-a, a pravljenje VM-a je opcionalan korak.</li>
+<li><strong>Tip OS-a s rezervom</strong> (<code>generic</code>): starije osinfo baze ne znaju za Ubuntu 24.04, pa bi <code>virt-install</code> odbio pokretanje.</li>
+</ul>
+<div class="note warn"><span class="lbl">Napomena</span>Pravljenje VM-a traži <code>/dev/kvm</code> (u WSL2 ugniježđenu virtualizaciju). <code>v2-p6-up</code> nije pokretan u razvojnom okruženju; <code>v2-p6</code> jeste.</div>
+</section>

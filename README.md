@@ -1,7 +1,7 @@
 # Sistemska i mrežna administracija 2026/27: primjeri s vježbi (Linux)
 
-Univerzitet u Zenici, Politehnički fakultet, Odsjek za softversko inženjerstvo.
-Asistent: ass. Mr. Adin Jahić.
+Univerzitet u Zenici, Politehnički fakultet, Odsjek za softversko inženjerstvo. I ciklus studija, 3. godina, V semestar.
+Vježbe, grupa A. Asistent: ass. Mr. Adin Jahić.
 
 Repozitorij sadrži vježbe iz prezentacija V6, V7 i V8, urađene na **Linuxu**. Svaka vježba je prava skripta koja se
 pokreće jednom naredbom `make`, pa se na nastavi odmah vidi šta se radi. Mreže se grade u Linux network namespace-ovima,
@@ -186,6 +186,19 @@ make v2-p2         # pouzdanost
 make v2-p3-lab     # štampači ... i dalje redom do v3-p5-lab
 ```
 
+## Dokumentacija
+
+U mapi [`docs/`](docs/):
+
+- [`SiMA - Vjezbe.pdf`](<docs/SiMA - Vjezbe.pdf>): bilješke s vježbi. Za svaki primjer redom: **arhitektonske odluke**
+  (šta želimo uraditi, definicija problema, zahtjevi), **implementacijske odluke** (programski pristup, isječci koda
+  objašnjeni red po red) i **dizajnerske odluke** (zašto implementacija u bashu dobro ostvaruje arhitektonske odluke).
+- `V6_SiMA`, `V7_SiMA`, `V8_SiMA` (`.pdf` i originalni `.ppt`): prezentacije s vježbi br. 6, 7 i 8.
+
+Izvor bilješki (HTML) je u `docs/src/`, a PDF se generiše naredbom `python3 docs/src/build.py` (potreban Edge, Chrome ili
+Chromium). Isječci koda se pri generisanju uzimaju direktno iz datoteka repozitorija, pa dokument uvijek prikazuje kod
+koji se stvarno izvršava.
+
 ## Rješavanje problema
 
 | Simptom | Rješenje |
@@ -202,6 +215,7 @@ make v2-p3-lab     # štampači ... i dalje redom do v3-p5-lab
 
 ```
 Makefile        # make help
+docs/           # bilješke s vježbi (PDF), prezentacije V6-V8, izvor bilješki u docs/src/
 00-setup.sh     # instalacija alata
 lib/            # zajedničke funkcije skripti (ispis naredbi, ping, namespace-ovi)
 vN/pM/OPIS.md   # opis svakog primjera (make vN-pM-desc)
